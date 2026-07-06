@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Formula 1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=Titillium+Web:ital,wght@0,400;0,600;0,700;0,900;1,700&display=swap" rel="stylesheet">
+
+<!-- =========================================================
+     EDIT ME — quick reference
+     - Styling:             css/styles.css
+     - Team & driver data:  js/data.js  (TEAMS / DRIVERS)
+     - Circuit data:        js/data.js  (CIRCUITS)
+     - News articles:       js/data.js  (NEWS)
+     - Site name:           js/data.js  (SITE_NAME / SITE_SHORT)
+     ========================================================= -->
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a href="#/" class="brand">
+      <span class="brand-mark"></span>
+      <span>Formula 1</span>
+    </a>
+    <nav class="main-nav" id="mainNav">
+      <a href="#/" data-route="/">Home</a>
+      <a href="#/news" data-route="/news">News</a>
+      <a href="#/schedule" data-route="/schedule">Schedule</a>
+      <a href="#/results" data-route="/results">Results</a>
+      <a href="#/drivers" data-route="/drivers">Drivers</a>
+      <a href="#/teams" data-route="/teams">Teams</a>
+    </nav>
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle menu">&#9776;</button>
+  </div>
+</header>
+
+<main id="app"></main>
+
+<footer>
+  <div class="container foot-inner">
+    <div class="foot-brand">Formula 1</div>
+    <p>Not associated with any official Formula 1 content. Seasons available: 2000&ndash;<span id="footYear"></span>.</p>
+  </div>
+</footer>
+
+<!-- Scripts load in dependency order: data -> helpers -> components -> pages -> router -->
+<script src="js/data.js"></script>
+<script src="js/helpers.js"></script>
+<script src="js/components.js"></script>
+<script src="js/pages.js"></script>
+<script src="js/router.js"></script>
+</body>
+</html>

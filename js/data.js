@@ -88,56 +88,527 @@ const LEGACY_TEAMS = [
   
 ];
 
-// ---- DRIVERS (20, 2 per team) — replace name/code/nationality/dob with real data ----
-// placeOfBirth / bio: shown in the "Biography" section on the driver profile
-const DRIVER_NUMBERS = [1,2,3,4,5,6,7,8,9,10,11,14,16,18,20,22,23,24,27,44];
-const DRIVERS = [];
-(function buildDrivers(){
-  let n = 1;
-  for(const team of TEAMS){
-    for(let k=0;k<2;k++){
-      DRIVERS.push({
-        id:n,
-        name:"Driver "+n,
-        code:"DR"+String(n).padStart(2,"0"),
-        number:DRIVER_NUMBERS[n-1],
-        teamId:team.id,
-        nationality:"Nationality "+n,
-        dob:"20"+String(90+(n%9)).slice(-2)+"-0"+((n%9)+1)+"-1"+(n%9),
-        placeOfBirth:"City "+n+", Nationality "+n,
-        bio:"Driver "+n+" came up through the junior single-seater ranks before earning a seat with "+team.name+", quickly settling into the team's driving style. Off the track, they are known for a methodical approach to race preparation and a close working relationship with their engineering crew, and are regarded within the paddock as a driver still building toward their full potential.",
-        wins:0, podiums:0, poles:0
-      });
-      n++;
-    }
-  }
-})();
-
-// ---- LEGACY DRIVERS — drivers who raced for LEGACY_TEAMS, used to populate historical grids ----
-// firstEntry / lastEntry mirror the legacy team's span on the grid.
-const LEGACY_DRIVERS = [];
-(function buildLegacyDrivers(){
-  let n = 1;
-  for(const team of LEGACY_TEAMS){
-    for(let k=0;k<2;k++){
-      const id = 1000 + n;
-      LEGACY_DRIVERS.push({
-        id,
-        name:"Driver L"+n,
-        code:"DL"+String(n).padStart(2,"0"),
-        number:DRIVER_NUMBERS[(n-1)%DRIVER_NUMBERS.length],
-        teamId:team.id,
-        nationality:"Nationality L"+n,
-        dob:"19"+String(70+(n%20)).slice(-2)+"-0"+((n%9)+1)+"-1"+(n%9),
-        placeOfBirth:"City L"+n+", Nationality L"+n,
-        bio:"Driver L"+n+" raced for "+team.name+" during the team's time on the grid, from "+team.firstEntry+" to "+team.lastEntry+", before the team departed Formula One.",
-        firstEntry:team.firstEntry, lastEntry:team.lastEntry,
-        wins:0, podiums:0, poles:0
-      });
-      n++;
-    }
-  }
-})();
+// ---- DRIVERS (real roster, ~86 drivers, 2000-2026) ----
+// Each driver has a per-season `history`: [{year, teamId, rookie}], built from the
+// season-by-season grid CSVs. currentTeamId is their most recent (or, for `upcoming`
+// drivers with no seasons yet, their incoming) team.
+const DRIVERS = [
+  {id:1, name:"Adam Langford", code:"LAN", number:null, nationality:"Canada", birthYear:null,
+   currentTeamId:102, debutYear:2000, lastYear:2001, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Adam Langford made their Formula One debut with Lynx in 2000. Their last season on the grid was 2001, with Lynx.",
+   history:[{year:2000,teamId:102,rookie:false}, {year:2001,teamId:102,rookie:false}]},
+  
+  {id:2, name:"Alejandro Ramos", code:"RAM", number:null, nationality:"Argentina", birthYear:null,
+   currentTeamId:6, debutYear:2008, lastYear:2011, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Alejandro Ramos made their Formula One debut with Refresh in 2008. They later moved on to race for Faucon in 2011. Their last season on the grid was 2011, with Faucon.",
+   history:[{year:2008,teamId:3,rookie:true}, {year:2009,teamId:3,rookie:false}, {year:2011,teamId:6,rookie:false}]},
+  
+  {id:3, name:"Alexander Everill", code:"EVE", number:18, nationality:"UK", birthYear:1987,
+   currentTeamId:1, debutYear:2009, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:"8 x WDC", wins:0, podiums:0, poles:0,
+   bio:"Alexander Everill made their Formula One debut with Cavalla Nera in 2009. They later moved on to race for Kinghorn in 2019. They remain on the grid with Kinghorn heading into 2026. Career honours: 8 x WDC.",
+   history:[{year:2009,teamId:2,rookie:true}, {year:2010,teamId:2,rookie:false}, {year:2011,teamId:2,rookie:false}, {year:2012,teamId:2,rookie:false}, {year:2013,teamId:2,rookie:false}, {year:2014,teamId:2,rookie:false}, {year:2015,teamId:2,rookie:false}, {year:2016,teamId:2,rookie:false}, {year:2017,teamId:2,rookie:false}, {year:2018,teamId:2,rookie:false}, {year:2019,teamId:1,rookie:false}, {year:2020,teamId:1,rookie:false}, {year:2021,teamId:1,rookie:false}, {year:2022,teamId:1,rookie:false}, {year:2023,teamId:1,rookie:false}, {year:2024,teamId:1,rookie:false}, {year:2025,teamId:1,rookie:false}, {year:2026,teamId:1,rookie:false}]},
+  
+   {id:4, name:"Alvaro Medina", code:"MED", number:null, nationality:"Brazil", birthYear:null,
+   currentTeamId:6, debutYear:2000, lastYear:2000, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Alvaro Medina made their Formula One debut with Faucon in 2000. Their last season on the grid was 2000, with Faucon.",
+   history:[{year:2000,teamId:6,rookie:true}]},
+  
+   {id:5, name:"Antoine Gilbert", code:"GIL", number:28, nationality:"France", birthYear:1999,
+   currentTeamId:10, debutYear:2021, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Antoine Gilbert made their Formula One debut with Leonides in 2021. They remain on the grid with Leonides heading into 2026.",
+   history:[{year:2021,teamId:10,rookie:true}, {year:2022,teamId:10,rookie:false}, {year:2023,teamId:10,rookie:false}, {year:2024,teamId:10,rookie:false}, {year:2025,teamId:10,rookie:false}, {year:2026,teamId:10,rookie:false}]},
+  
+   {id:6, name:"Anton Hjelström", code:"HJE", number:null, nationality:"Sweden", birthYear:null,
+   currentTeamId:10, debutYear:2012, lastYear:2015, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Anton Hjelström made their Formula One debut with Leonides in 2012. Their last season on the grid was 2015, with Leonides.",
+   history:[{year:2012,teamId:10,rookie:true}, {year:2013,teamId:10,rookie:false}, {year:2014,teamId:10,rookie:false}, {year:2015,teamId:10,rookie:false}]},
+  
+   {id:7, name:"Antonino Alberghi", code:"ALB", number:null, nationality:"Italy", birthYear:null,
+   currentTeamId:2, debutYear:2000, lastYear:2003, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Antonino Alberghi made their Formula One debut with Cavalla Nera in 2000. Their last season on the grid was 2003, with Cavalla Nera.",
+   history:[{year:2000,teamId:2,rookie:false}, {year:2001,teamId:2,rookie:false}, {year:2002,teamId:2,rookie:false}, {year:2003,teamId:2,rookie:false}]},
+  
+   {id:8, name:"Antti Saarinen", code:"SAA", number:null, nationality:"Finland", birthYear:null,
+   currentTeamId:7, debutYear:2015, lastYear:2020, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Antti Saarinen made their Formula One debut with VentoGrigio in 2015. They later moved on to race for ACXS in 2019. Their last season on the grid was 2020, with ACXS.",
+   history:[{year:2015,teamId:103,rookie:true}, {year:2016,teamId:103,rookie:false}, {year:2017,teamId:103,rookie:false}, {year:2018,teamId:103,rookie:false}, {year:2019,teamId:7,rookie:false}, {year:2020,teamId:7,rookie:false}]},
+  
+   {id:9, name:"Arjun Reddy", code:"RED", number:null, nationality:"India", birthYear:null,
+   currentTeamId:9, debutYear:2019, lastYear:2020, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Arjun Reddy made their Formula One debut with Atlas Petrol in 2019. Their last season on the grid was 2020, with Atlas Petrol.",
+   history:[{year:2019,teamId:9,rookie:true}, {year:2020,teamId:9,rookie:false}]},
+  
+   {id:10, name:"Armando Sala", code:"SAL", number:null, nationality:"Portugal", birthYear:null,
+   currentTeamId:106, debutYear:2000, lastYear:2003, stillActive:false, upcoming:false,
+   achievements:"5x WDC", wins:0, podiums:0, poles:0,
+   bio:"Armando Sala made their Formula One debut with Atlantica in 2000. Their last season on the grid was 2003, with Atlantica. Career honours: 5x WDC. Dominated the late 90s",
+   history:[{year:2000,teamId:106,rookie:false}, {year:2001,teamId:106,rookie:false}, {year:2002,teamId:106,rookie:false}, {year:2003,teamId:106,rookie:false}]},
+  
+   {id:11, name:"Bruno Almeida", code:"ALM", number:null, nationality:"Brazil", birthYear:null,
+   currentTeamId:106, debutYear:2000, lastYear:2008, stillActive:false, upcoming:false,
+   achievements:"1x WDC", wins:0, podiums:0, poles:0,
+   bio:"Bruno Almeida made their Formula One debut with Kinghorn in 2000. They later moved on to race for Atlantica in 2004. Their last season on the grid was 2008, with Atlantica. Career honours: 1x WDC.",
+   history:[{year:2000,teamId:1,rookie:false}, {year:2001,teamId:1,rookie:false}, {year:2002,teamId:1,rookie:false}, {year:2003,teamId:1,rookie:false}, {year:2004,teamId:106,rookie:false}, {year:2005,teamId:106,rookie:false}, {year:2006,teamId:106,rookie:false}, {year:2007,teamId:106,rookie:false}, {year:2008,teamId:106,rookie:false}]},
+  
+   {id:12, name:"Bryan Jordan", code:"JOR", number:null, nationality:"Ireland", birthYear:null,
+   currentTeamId:8, debutYear:2000, lastYear:2017, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Bryan Jordan made their Formula One debut with Refresh in 2000. They later moved on to race for Leonides in 2013, then Equin in 2014. Their last season on the grid was 2017, with Equin.",
+   history:[{year:2000,teamId:3,rookie:false}, {year:2013,teamId:10,rookie:true}, {year:2014,teamId:8,rookie:false}, {year:2015,teamId:8,rookie:false}, {year:2016,teamId:8,rookie:false}, {year:2017,teamId:8,rookie:false}]},
+  
+   {id:13, name:"Callum Sykes", code:"SYK", number:1, nationality:"UK", birthYear:1998,
+   currentTeamId:2, debutYear:2019, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:"1 x WDC", wins:0, podiums:0, poles:0,
+   bio:"Callum Sykes made their Formula One debut with Cavalla Nera in 2019. They remain on the grid with Cavalla Nera heading into 2026. Career honours: 1 x WDC.",
+   history:[{year:2019,teamId:2,rookie:true}, {year:2020,teamId:2,rookie:false}, {year:2021,teamId:2,rookie:false}, {year:2022,teamId:2,rookie:false}, {year:2023,teamId:2,rookie:false}, {year:2024,teamId:2,rookie:false}, {year:2025,teamId:2,rookie:false}, {year:2026,teamId:2,rookie:false}]},
+  
+   {id:14, name:"Carrie Bundle", code:"BUN", number:6, nationality:"UK", birthYear:2007,
+   currentTeamId:4, debutYear:2027, lastYear:null, stillActive:false, upcoming:true,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Carrie Bundle is set to make their Formula One debut in 2027, joining MerQury.",
+   history:[]},
+  
+   {id:15, name:"Daria Södergård", code:"SOD", number:33, nationality:"Sweden", birthYear:2007,
+   currentTeamId:3, debutYear:2025, lastYear:null, stillActive:true, upcoming:true,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Daria Södergård is set to make their Formula One debut in 2025, joining Refresh.",
+   history:[]},
+  
+   {id:16, name:"Diogo Batista", code:"BAT", number:null, nationality:"Portugal", birthYear:null,
+   currentTeamId:108, debutYear:2014, lastYear:2014, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Diogo Batista made their Formula One debut with Atlas Astraea in 2014. Their last season on the grid was 2014, with Atlas Astraea.",
+   history:[{year:2014,teamId:108,rookie:true}]},
+  
+   {id:17, name:"Eero Lindvee", code:"LIN", number:77, nationality:"Estonia", birthYear:1995,
+   currentTeamId:9, debutYear:2017, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Eero Lindvee made their Formula One debut with Equin in 2017. They later moved on to race for Atlas Petrol in 2024. They remain on the grid with Atlas Petrol heading into 2026.",
+   history:[{year:2017,teamId:8,rookie:true}, {year:2018,teamId:8,rookie:false}, {year:2019,teamId:8,rookie:false}, {year:2020,teamId:8,rookie:false}, {year:2021,teamId:8,rookie:false}, {year:2022,teamId:8,rookie:false}, {year:2023,teamId:8,rookie:false}, {year:2024,teamId:9,rookie:false}, {year:2025,teamId:9,rookie:false}, {year:2026,teamId:9,rookie:false}]},
+  
+   {id:18, name:"Florent Sauvageon", code:"SAU", number:null, nationality:"France", birthYear:null,
+   currentTeamId:102, debutYear:2000, lastYear:2006, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Florent Sauvageon made their Formula One debut with Kimura in 2000. They later moved on to race for Lynx in 2004. Their last season on the grid was 2006, with Lynx.",
+   history:[{year:2000,teamId:107,rookie:false}, {year:2001,teamId:107,rookie:false}, {year:2004,teamId:102,rookie:false}, {year:2005,teamId:102,rookie:false}, {year:2006,teamId:102,rookie:false}]},
+  
+   {id:19, name:"Florian Brückner", code:"BRU", number:null, nationality:"Germany", birthYear:1982,
+   currentTeamId:1, debutYear:2003, lastYear:2011, stillActive:false, upcoming:false,
+   achievements:"1x WDC", wins:0, podiums:0, poles:0,
+   bio:"Florian Brückner made their Formula One debut with Atlas Astraea in 2003. They later moved on to race for Kinghorn in 2005. Their last season on the grid was 2011, with Kinghorn. Career honours: 1x WDC.",
+   history:[{year:2003,teamId:108,rookie:true}, {year:2004,teamId:108,rookie:false}, {year:2005,teamId:1,rookie:false}, {year:2006,teamId:1,rookie:false}, {year:2007,teamId:1,rookie:false}, {year:2008,teamId:1,rookie:false}, {year:2009,teamId:1,rookie:false}, {year:2010,teamId:1,rookie:false}, {year:2011,teamId:1,rookie:false}]},
+  
+   {id:20, name:"Frank Austin", code:"AUS", number:null, nationality:"USA", birthYear:null,
+   currentTeamId:8, debutYear:2013, lastYear:2016, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Frank Austin made their Formula One debut with Equin in 2013. Their last season on the grid was 2016, with Equin.",
+   history:[{year:2013,teamId:8,rookie:true}, {year:2014,teamId:8,rookie:false}, {year:2015,teamId:8,rookie:false}, {year:2016,teamId:8,rookie:false}]},
+  
+   {id:21, name:"Georgio Adlington", code:"ADL", number:97, nationality:"UK", birthYear:1997,
+   currentTeamId:6, debutYear:2020, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Georgio Adlington made their Formula One debut with Equin in 2020. They later moved on to race for ACXS in 2021, then Frecciata in 2023, then Faucon in 2025. They remain on the grid with Faucon heading into 2026.",
+   history:[{year:2020,teamId:8,rookie:false}, {year:2021,teamId:7,rookie:false}, {year:2022,teamId:7,rookie:false}, {year:2023,teamId:5,rookie:false}, {year:2024,teamId:5,rookie:false}, {year:2025,teamId:6,rookie:false}, {year:2026,teamId:6,rookie:false}]},
+  
+   {id:22, name:"Gerrit Van Dijk", code:"VAN", number:3, nationality:"Netherlands", birthYear:1982,
+   currentTeamId:6, debutYear:2002, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:"2 x WDC", wins:0, podiums:0, poles:0,
+   bio:"Gerrit Van Dijk made their Formula One debut with Inara in 2002. They later moved on to race for Faucon in 2005, then MerQury in 2013, then Frecciata in 2021, then Faucon in 2023. They remain on the grid with Faucon heading into 2026. Career honours: 2 x WDC.",
+   history:[{year:2002,teamId:105,rookie:true}, {year:2003,teamId:105,rookie:false}, {year:2004,teamId:105,rookie:false}, {year:2005,teamId:6,rookie:false}, {year:2006,teamId:6,rookie:false}, {year:2007,teamId:6,rookie:false}, {year:2008,teamId:6,rookie:false}, {year:2009,teamId:6,rookie:false}, {year:2010,teamId:6,rookie:false}, {year:2013,teamId:4,rookie:false}, {year:2014,teamId:4,rookie:false}, {year:2015,teamId:4,rookie:false}, {year:2016,teamId:4,rookie:false}, {year:2017,teamId:4,rookie:false}, {year:2018,teamId:4,rookie:false}, {year:2019,teamId:4,rookie:false}, {year:2020,teamId:4,rookie:false}, {year:2021,teamId:5,rookie:false}, {year:2022,teamId:5,rookie:false}, {year:2023,teamId:6,rookie:false}, {year:2024,teamId:6,rookie:false}, {year:2025,teamId:6,rookie:false}, {year:2026,teamId:6,rookie:false}]},
+  
+   {id:23, name:"Hannes Althaus", code:"ALT", number:null, nationality:"Germany", birthYear:1984,
+   currentTeamId:3, debutYear:2004, lastYear:2019, stillActive:false, upcoming:false,
+   achievements:"2x WDC", wins:0, podiums:0, poles:0,
+   bio:"Hannes Althaus made their Formula One debut with Kimura in 2004. They later moved on to race for Kinghorn in 2007, then Cavalla Nera in 2007, then Kinghorn in 2008, then Refresh in 2015. Their last season on the grid was 2019, with Refresh. Career honours: 2x WDC.",
+   history:[{year:2004,teamId:107,rookie:true}, {year:2005,teamId:107,rookie:false}, {year:2006,teamId:107,rookie:false}, {year:2007,teamId:1,rookie:false}, {year:2007,teamId:2,rookie:false}, {year:2008,teamId:2,rookie:false}, {year:2008,teamId:1,rookie:false}, {year:2009,teamId:1,rookie:false}, {year:2010,teamId:1,rookie:false}, {year:2011,teamId:1,rookie:false}, {year:2012,teamId:1,rookie:false}, {year:2013,teamId:1,rookie:false}, {year:2014,teamId:1,rookie:false}, {year:2015,teamId:3,rookie:false}, {year:2016,teamId:3,rookie:false}, {year:2017,teamId:3,rookie:false}, {year:2018,teamId:3,rookie:false}, {year:2019,teamId:3,rookie:false}]},
+  
+   {id:24, name:"Haoran Chen", code:"CHE", number:null, nationality:"China", birthYear:null,
+   currentTeamId:10, debutYear:2005, lastYear:2016, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Haoran Chen made their Formula One debut with Atlas Astraea in 2005. They later moved on to race for Lynx in 2008, then Equin in 2010, then Leonides in 2014. Their last season on the grid was 2016, with Leonides.",
+   history:[{year:2005,teamId:108,rookie:true}, {year:2006,teamId:108,rookie:false}, {year:2007,teamId:108,rookie:false}, {year:2008,teamId:102,rookie:false}, {year:2009,teamId:102,rookie:false}, {year:2010,teamId:8,rookie:false}, {year:2011,teamId:8,rookie:false}, {year:2012,teamId:8,rookie:false}, {year:2013,teamId:8,rookie:false}, {year:2014,teamId:10,rookie:false}, {year:2015,teamId:10,rookie:false}, {year:2016,teamId:10,rookie:false}]},
+  
+   {id:25, name:"Hugo Lefèvre", code:"LEF", number:null, nationality:"France", birthYear:null,
+   currentTeamId:6, debutYear:2000, lastYear:2012, stillActive:false, upcoming:false,
+   achievements:"1x WDC", wins:0, podiums:0, poles:0,
+   bio:"Hugo Lefèvre made their Formula One debut with Equin in 2000. They later moved on to race for Cavalla Nera in 2004, then Faucon in 2009. Their last season on the grid was 2012, with Faucon. Career honours: 1x WDC.",
+   history:[{year:2000,teamId:8,rookie:false}, {year:2004,teamId:2,rookie:false}, {year:2005,teamId:2,rookie:false}, {year:2006,teamId:2,rookie:false}, {year:2007,teamId:2,rookie:false}, {year:2008,teamId:2,rookie:false}, {year:2009,teamId:6,rookie:false}, {year:2010,teamId:6,rookie:false}, {year:2011,teamId:6,rookie:false}, {year:2012,teamId:6,rookie:false}]},
+  
+   {id:26, name:"Hugo Reid", code:"REI", number:null, nationality:"UK", birthYear:null,
+   currentTeamId:6, debutYear:2001, lastYear:2002, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Hugo Reid made their Formula One debut with Faucon in 2001. Their last season on the grid was 2002, with Faucon.",
+   history:[{year:2001,teamId:6,rookie:true}, {year:2002,teamId:6,rookie:false}]},
+  
+   {id:27, name:"Ian Mallory", code:"MAL", number:22, nationality:"UK", birthYear:1999,
+   currentTeamId:4, debutYear:2022, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Ian Mallory made their Formula One debut with Leonides in 2022. They later moved on to race for MerQury in 2025. They remain on the grid with MerQury heading into 2026.",
+   history:[{year:2022,teamId:10,rookie:true}, {year:2023,teamId:10,rookie:false}, {year:2024,teamId:10,rookie:false}, {year:2025,teamId:4,rookie:false}, {year:2026,teamId:4,rookie:false}]},
+  
+   {id:28, name:"Javier Castillo", code:"CAS", number:null, nationality:"Spain", birthYear:null,
+   currentTeamId:7, debutYear:2010, lastYear:2019, stillActive:false, upcoming:false,
+   achievements:"1x WDC", wins:0, podiums:0, poles:0,
+   bio:"Javier Castillo made their Formula One debut with MerQury in 2010. They later moved on to race for Refresh in 2014, then Xtreme in 2015, then ACXS in 2018. Their last season on the grid was 2019, with ACXS. Career honours: 1x WDC.",
+   history:[{year:2010,teamId:4,rookie:true}, {year:2011,teamId:4,rookie:false}, {year:2012,teamId:4,rookie:false}, {year:2013,teamId:4,rookie:false}, {year:2014,teamId:3,rookie:false}, {year:2015,teamId:104,rookie:false}, {year:2016,teamId:104,rookie:false}, {year:2017,teamId:104,rookie:false}, {year:2018,teamId:7,rookie:false}, {year:2019,teamId:7,rookie:false}]},
+  
+   {id:29, name:"Jinwoo Han", code:"HAN", number:39, nationality:"South Korea", birthYear:2001,
+   currentTeamId:8, debutYear:2023, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Jinwoo Han made their Formula One debut with Equin in 2023. They remain on the grid with Equin heading into 2026.",
+   history:[{year:2023,teamId:8,rookie:true}, {year:2024,teamId:8,rookie:false}, {year:2025,teamId:8,rookie:false}, {year:2026,teamId:8,rookie:false}]},
+  
+   {id:30, name:"Joe Watts", code:"WAT", number:null, nationality:"USA", birthYear:null,
+   currentTeamId:1, debutYear:2007, lastYear:2016, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Joe Watts made their Formula One debut with Xtreme in 2007. They later moved on to race for Kinghorn in 2015. Their last season on the grid was 2016, with Kinghorn. Xtreme's Golden Boy",
+   history:[{year:2007,teamId:104,rookie:true}, {year:2008,teamId:104,rookie:false}, {year:2009,teamId:104,rookie:false}, {year:2010,teamId:104,rookie:false}, {year:2011,teamId:104,rookie:false}, {year:2012,teamId:104,rookie:false}, {year:2013,teamId:104,rookie:false}, {year:2014,teamId:104,rookie:false}, {year:2015,teamId:1,rookie:false}, {year:2016,teamId:1,rookie:false}]},
+  
+   {id:31, name:"Jonas Holm", code:"HOL", number:null, nationality:"Denmark", birthYear:null,
+   currentTeamId:2, debutYear:2006, lastYear:2006, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Jonas Holm made their Formula One debut with Cavalla Nera in 2006. Their last season on the grid was 2006, with Cavalla Nera.",
+   history:[{year:2006,teamId:2,rookie:true}]},
+  
+   {id:32, name:"Jonathan Jäger", code:"JAG", number:null, nationality:"Switzerland", birthYear:null,
+   currentTeamId:6, debutYear:2000, lastYear:2001, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Jonathan Jäger made their Formula One debut with Faucon in 2000. Their last season on the grid was 2001, with Faucon.",
+   history:[{year:2000,teamId:6,rookie:false}, {year:2001,teamId:6,rookie:false}]},
+  
+   {id:33, name:"Jose Torres", code:"TOR", number:2, nationality:"Spain", birthYear:2003,
+   currentTeamId:4, debutYear:2023, lastYear:2023, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Jose Torres made their Formula One debut with MerQury in 2023. Their last season on the grid was 2023, with MerQury.",
+   history:[{year:2023,teamId:4,rookie:true}]},
+  
+   {id:34, name:"Julian Carmichael", code:"CAR", number:9, nationality:"Australia", birthYear:1996,
+   currentTeamId:4, debutYear:2016, lastYear:2026, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Julian Carmichael made their Formula One debut with Xtreme in 2016. They later moved on to race for MerQury in 2019. Their last season on the grid was 2026, with MerQury.",
+   history:[{year:2016,teamId:104,rookie:true}, {year:2017,teamId:104,rookie:false}, {year:2019,teamId:4,rookie:false}, {year:2020,teamId:4,rookie:false}, {year:2021,teamId:4,rookie:false}, {year:2022,teamId:4,rookie:false}, {year:2023,teamId:4,rookie:false}, {year:2024,teamId:4,rookie:false}, {year:2025,teamId:4,rookie:false}, {year:2026,teamId:4,rookie:false}]},
+  
+   {id:35, name:"Jürgen Schneider", code:"SCH", number:null, nationality:"Germany", birthYear:null,
+   currentTeamId:1, debutYear:2000, lastYear:2001, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Jürgen Schneider made their Formula One debut with Kinghorn in 2000. Their last season on the grid was 2001, with Kinghorn.",
+   history:[{year:2000,teamId:1,rookie:false}, {year:2001,teamId:1,rookie:false}]},
+  
+   {id:36, name:"Kacper Nowak", code:"NOW", number:null, nationality:"Poland", birthYear:null,
+   currentTeamId:1, debutYear:2004, lastYear:2012, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Kacper Nowak made their Formula One debut with Faucon in 2004. They later moved on to race for Refresh in 2005, then Kinghorn in 2012. Their last season on the grid was 2012, with Kinghorn.",
+   history:[{year:2004,teamId:6,rookie:true}, {year:2005,teamId:3,rookie:false}, {year:2006,teamId:3,rookie:false}, {year:2007,teamId:3,rookie:false}, {year:2008,teamId:3,rookie:false}, {year:2009,teamId:3,rookie:false}, {year:2010,teamId:3,rookie:false}, {year:2011,teamId:3,rookie:false}, {year:2012,teamId:1,rookie:false}]},
+  
+   {id:37, name:"Kieran William", code:"WIL", number:20, nationality:"Canada", birthYear:1984,
+   currentTeamId:1, debutYear:2001, lastYear:2024, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Kieran William made their Formula One debut with Refresh in 2001. They later moved on to race for Atlas Astraea in 2008, then Xtreme in 2013, then Kinghorn in 2016. Their last season on the grid was 2024, with Kinghorn.",
+   history:[{year:2001,teamId:3,rookie:true}, {year:2002,teamId:3,rookie:false}, {year:2003,teamId:3,rookie:false}, {year:2004,teamId:3,rookie:false}, {year:2005,teamId:3,rookie:false}, {year:2006,teamId:3,rookie:false}, {year:2007,teamId:3,rookie:false}, {year:2008,teamId:108,rookie:false}, {year:2009,teamId:108,rookie:false}, {year:2010,teamId:108,rookie:false}, {year:2011,teamId:108,rookie:false}, {year:2012,teamId:108,rookie:false}, {year:2013,teamId:104,rookie:false}, {year:2014,teamId:104,rookie:false}, {year:2015,teamId:104,rookie:false}, {year:2016,teamId:1,rookie:false}, {year:2017,teamId:1,rookie:false}, {year:2018,teamId:1,rookie:false}, {year:2019,teamId:1,rookie:false}, {year:2020,teamId:1,rookie:false}, {year:2021,teamId:1,rookie:false}, {year:2022,teamId:1,rookie:false}, {year:2023,teamId:1,rookie:false}, {year:2024,teamId:1,rookie:false}]},
+  
+   {id:38, name:"Lachlan Fraser", code:"FRA", number:null, nationality:"UK", birthYear:null,
+   currentTeamId:8, debutYear:2000, lastYear:2007, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Lachlan Fraser made their Formula One debut with Astraea in 2000. They later moved on to race for Faucon in 2002, then Kinghorn in 2004, then Kimura in 2005, then Equin in 2007. Their last season on the grid was 2007, with Equin.",
+   history:[{year:2000,teamId:101,rookie:false}, {year:2001,teamId:101,rookie:false}, {year:2002,teamId:6,rookie:false}, {year:2003,teamId:6,rookie:false}, {year:2004,teamId:1,rookie:false}, {year:2005,teamId:107,rookie:false}, {year:2006,teamId:107,rookie:false}, {year:2007,teamId:8,rookie:false}]},
+  
+   {id:39, name:"Leon Radvan", code:"RAD", number:50, nationality:"Poland", birthYear:1998,
+   currentTeamId:3, debutYear:2018, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:"2 x WDC", wins:0, podiums:0, poles:0,
+   bio:"Leon Radvan made their Formula One debut with Faucon in 2018. They later moved on to race for Refresh in 2020. They remain on the grid with Refresh heading into 2026. Career honours: 2 x WDC.",
+   history:[{year:2018,teamId:6,rookie:true}, {year:2019,teamId:6,rookie:false}, {year:2020,teamId:3,rookie:false}, {year:2021,teamId:3,rookie:false}, {year:2022,teamId:3,rookie:false}, {year:2023,teamId:3,rookie:false}, {year:2024,teamId:3,rookie:false}, {year:2025,teamId:3,rookie:false}, {year:2026,teamId:3,rookie:false}]},
+  
+   {id:40, name:"Liam Atkinson", code:"ATK", number:null, nationality:"Australia", birthYear:null,
+   currentTeamId:102, debutYear:2009, lastYear:2012, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Liam Atkinson made their Formula One debut with Lynx in 2009. Their last season on the grid was 2012, with Lynx.",
+   history:[{year:2009,teamId:102,rookie:true}, {year:2010,teamId:102,rookie:false}, {year:2011,teamId:102,rookie:false}, {year:2012,teamId:102,rookie:false}]},
+  
+   {id:41, name:"Liam Finnegan", code:"FIN", number:null, nationality:"Ireland", birthYear:null,
+   currentTeamId:10, debutYear:2015, lastYear:2019, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Liam Finnegan made their Formula One debut with Faucon in 2015. They later moved on to race for Leonides in 2017. Their last season on the grid was 2019, with Leonides.",
+   history:[{year:2015,teamId:6,rookie:true}, {year:2016,teamId:6,rookie:false}, {year:2017,teamId:10,rookie:false}, {year:2018,teamId:10,rookie:false}, {year:2019,teamId:10,rookie:false}]},
+  
+   {id:42, name:"Lorenzo Conti", code:"CON", number:null, nationality:"San Marino", birthYear:null,
+   currentTeamId:103, debutYear:2009, lastYear:2016, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Lorenzo Conti made their Formula One debut with Cavalla Nera in 2009. They later moved on to race for Xtreme in 2011, then VentoGrigio in 2013. Their last season on the grid was 2016, with VentoGrigio.",
+   history:[{year:2009,teamId:2,rookie:true}, {year:2010,teamId:2,rookie:false}, {year:2011,teamId:104,rookie:false}, {year:2012,teamId:104,rookie:false}, {year:2013,teamId:103,rookie:false}, {year:2014,teamId:103,rookie:false}, {year:2015,teamId:103,rookie:false}, {year:2016,teamId:103,rookie:false}]},
+  
+   {id:43, name:"Louis Jules", code:"JUL", number:67, nationality:"France", birthYear:1997,
+   currentTeamId:6, debutYear:2017, lastYear:2024, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Louis Jules made their Formula One debut with Kinghorn in 2017. They later moved on to race for Faucon in 2020. Their last season on the grid was 2024, with Faucon.",
+   history:[{year:2017,teamId:1,rookie:false}, {year:2018,teamId:1,rookie:true}, {year:2020,teamId:6,rookie:false}, {year:2021,teamId:6,rookie:false}, {year:2022,teamId:6,rookie:false}, {year:2023,teamId:6,rookie:false}, {year:2024,teamId:6,rookie:false}]},
+  
+   {id:44, name:"Louis Vermeiren", code:"VEM", number:null, nationality:"Belgium", birthYear:null,
+   currentTeamId:8, debutYear:2002, lastYear:2012, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Louis Vermeiren made their Formula One debut with Atlantica in 2002. They later moved on to race for Lynx in 2005, then Equin in 2008. Their last season on the grid was 2012, with Equin.",
+   history:[{year:2002,teamId:106,rookie:true}, {year:2003,teamId:106,rookie:false}, {year:2005,teamId:102,rookie:false}, {year:2006,teamId:102,rookie:false}, {year:2007,teamId:102,rookie:false}, {year:2008,teamId:8,rookie:false}, {year:2009,teamId:8,rookie:false}, {year:2010,teamId:8,rookie:false}, {year:2011,teamId:8,rookie:false}, {year:2012,teamId:8,rookie:false}]},
+  
+   {id:45, name:"Luca Moretti", code:"MOR", number:null, nationality:"Italy", birthYear:null,
+   currentTeamId:109, debutYear:2000, lastYear:2000, stillActive:false, upcoming:false,
+   achievements:"3x WDC", wins:0, podiums:0, poles:0,
+   bio:"Luca Moretti made their Formula One debut with Atlas in 2000. Their last season on the grid was 2000, with Atlas. Career honours: 3x WDC.",
+   history:[{year:2000,teamId:109,rookie:false}]},
+  
+   {id:46, name:"Luis Hernandez", code:"HER", number:null, nationality:"Mexico", birthYear:null,
+   currentTeamId:4, debutYear:2013, lastYear:2018, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Luis Hernandez made their Formula One debut with Atlas Astraea in 2013. They later moved on to race for MerQury in 2014. Their last season on the grid was 2018, with MerQury.",
+   history:[{year:2013,teamId:108,rookie:true}, {year:2014,teamId:4,rookie:false}, {year:2015,teamId:4,rookie:false}, {year:2016,teamId:4,rookie:false}, {year:2017,teamId:4,rookie:false}, {year:2018,teamId:4,rookie:false}]},
+  
+   {id:47, name:"Lukas Chaisiri", code:"CHA", number:null, nationality:"Thailand", birthYear:null,
+   currentTeamId:10, debutYear:2016, lastYear:2021, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Lukas Chaisiri made their Formula One debut with Leonides in 2016. Their last season on the grid was 2021, with Leonides.",
+   history:[{year:2016,teamId:10,rookie:true}, {year:2017,teamId:10,rookie:false}, {year:2018,teamId:10,rookie:false}, {year:2019,teamId:10,rookie:false}, {year:2020,teamId:10,rookie:false}, {year:2021,teamId:10,rookie:false}]},
+  
+   {id:48, name:"Magnus Osterrhein", code:"OST", number:15, nationality:"Germany", birthYear:1993,
+   currentTeamId:5, debutYear:2015, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Magnus Osterrhein made their Formula One debut with Refresh in 2015. They later moved on to race for VentoGrigio in 2019, then Frecciata in 2021. They remain on the grid with Frecciata heading into 2026.",
+   history:[{year:2015,teamId:3,rookie:true}, {year:2016,teamId:3,rookie:false}, {year:2017,teamId:3,rookie:false}, {year:2018,teamId:3,rookie:false}, {year:2019,teamId:103,rookie:false}, {year:2020,teamId:103,rookie:false}, {year:2021,teamId:5,rookie:false}, {year:2022,teamId:5,rookie:false}, {year:2023,teamId:5,rookie:false}, {year:2024,teamId:5,rookie:false}, {year:2025,teamId:5,rookie:false}, {year:2026,teamId:5,rookie:false}]},
+  
+   {id:49, name:"Mahmoud Abdelrahman", code:"ABD", number:null, nationality:"Egypt", birthYear:null,
+   currentTeamId:105, debutYear:2009, lastYear:2010, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Mahmoud Abdelrahman made their Formula One debut with Inara in 2009. Their last season on the grid was 2010, with Inara.",
+   history:[{year:2009,teamId:105,rookie:true}, {year:2010,teamId:105,rookie:false}]},
+  
+   {id:50, name:"Malcom Rowe", code:"ROW", number:null, nationality:"Scotland", birthYear:null,
+   currentTeamId:6, debutYear:2007, lastYear:2008, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Malcom Rowe made their Formula One debut with Faucon in 2007. Their last season on the grid was 2008, with Faucon.",
+   history:[{year:2007,teamId:6,rookie:true}, {year:2008,teamId:6,rookie:false}]},
+  
+   {id:51, name:"Malthe Simonsen", code:"SIM", number:null, nationality:"Denmark", birthYear:null,
+   currentTeamId:8, debutYear:2000, lastYear:2005, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Malthe Simonsen made their Formula One debut with Lynx in 2000. They later moved on to race for Equin in 2004. Their last season on the grid was 2005, with Equin.",
+   history:[{year:2000,teamId:102,rookie:true}, {year:2001,teamId:102,rookie:false}, {year:2002,teamId:102,rookie:false}, {year:2003,teamId:102,rookie:false}, {year:2004,teamId:8,rookie:false}, {year:2005,teamId:8,rookie:false}]},
+  
+   {id:52, name:"Marc Caron", code:"CAO", number:null, nationality:"France", birthYear:null,
+   currentTeamId:9, debutYear:2013, lastYear:2019, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Marc Caron made their Formula One debut with VentoGrigio in 2013. They later moved on to race for Atlas Petrol in 2015. Their last season on the grid was 2019, with Atlas Petrol.",
+   history:[{year:2013,teamId:103,rookie:true}, {year:2014,teamId:103,rookie:false}, {year:2015,teamId:9,rookie:false}, {year:2016,teamId:9,rookie:false}, {year:2017,teamId:9,rookie:false}, {year:2018,teamId:9,rookie:false}, {year:2019,teamId:9,rookie:false}]},
+  
+   {id:53, name:"Marcel Lehmann", code:"LEH", number:null, nationality:"Germany", birthYear:null,
+   currentTeamId:6, debutYear:2013, lastYear:2014, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Marcel Lehmann made their Formula One debut with Faucon in 2013. Their last season on the grid was 2014, with Faucon.",
+   history:[{year:2013,teamId:6,rookie:true}, {year:2014,teamId:6,rookie:false}]},
+  
+   {id:54, name:"Martin Courtois", code:"COU", number:55, nationality:"France", birthYear:1998,
+   currentTeamId:7, debutYear:2019, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Martin Courtois made their Formula One debut with Refresh in 2019. They later moved on to race for Equin in 2021, then ACXS in 2023. They remain on the grid with ACXS heading into 2026.",
+   history:[{year:2019,teamId:3,rookie:true}, {year:2020,teamId:3,rookie:false}, {year:2021,teamId:8,rookie:false}, {year:2022,teamId:8,rookie:false}, {year:2023,teamId:7,rookie:false}, {year:2024,teamId:7,rookie:false}, {year:2025,teamId:7,rookie:false}, {year:2026,teamId:7,rookie:false}]},
+  
+   {id:55, name:"Masahiro Yamazaki", code:"YAM", number:null, nationality:"Japan", birthYear:null,
+   currentTeamId:107, debutYear:2000, lastYear:2003, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Masahiro Yamazaki made their Formula One debut with Kimura in 2000. Their last season on the grid was 2003, with Kimura.",
+   history:[{year:2000,teamId:107,rookie:false}, {year:2001,teamId:107,rookie:false}, {year:2002,teamId:107,rookie:false}, {year:2003,teamId:107,rookie:false}]},
+  
+   {id:56, name:"Matteo Ricci", code:"RIC", number:null, nationality:"Spain", birthYear:null,
+   currentTeamId:1, debutYear:2011, lastYear:2015, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Matteo Ricci made their Formula One debut with Leonides in 2011. They later moved on to race for Kinghorn in 2013. Their last season on the grid was 2015, with Kinghorn.",
+   history:[{year:2011,teamId:10,rookie:true}, {year:2012,teamId:10,rookie:false}, {year:2013,teamId:1,rookie:false}, {year:2014,teamId:1,rookie:false}, {year:2015,teamId:1,rookie:false}]},
+  
+   {id:57, name:"Matthew Cox", code:"COX", number:87, nationality:"Canada", birthYear:1996,
+   currentTeamId:5, debutYear:2017, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Matthew Cox made their Formula One debut with Faucon in 2017. They later moved on to race for MerQury in 2021, then Frecciata in 2025. They remain on the grid with Frecciata heading into 2026.",
+   history:[{year:2017,teamId:6,rookie:true}, {year:2018,teamId:6,rookie:false}, {year:2019,teamId:6,rookie:false}, {year:2020,teamId:6,rookie:false}, {year:2021,teamId:6,rookie:false}, {year:2021,teamId:4,rookie:false}, {year:2022,teamId:4,rookie:false}, {year:2024,teamId:4,rookie:false}, {year:2025,teamId:5,rookie:false}, {year:2026,teamId:5,rookie:false}]},
+  
+   {id:58, name:"Mattias Rundström", code:"RUN", number:null, nationality:"Sweden", birthYear:1978,
+   currentTeamId:108, debutYear:2000, lastYear:2014, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Mattias Rundström made their Formula One debut with Atlas in 2000. They later moved on to race for Atlas Astraea in 2002, then Refresh in 2003, then Kinghorn in 2005, then Xtreme in 2007, then Atlas Astraea in 2011. Their last season on the grid was 2014, with Atlas Astraea.",
+   history:[{year:2000,teamId:109,rookie:true}, {year:2001,teamId:109,rookie:false}, {year:2002,teamId:108,rookie:false}, {year:2003,teamId:3,rookie:false}, {year:2004,teamId:3,rookie:false}, {year:2005,teamId:1,rookie:false}, {year:2006,teamId:1,rookie:false}, {year:2007,teamId:104,rookie:false}, {year:2008,teamId:104,rookie:false}, {year:2009,teamId:104,rookie:false}, {year:2010,teamId:104,rookie:false}, {year:2011,teamId:108,rookie:false}, {year:2012,teamId:108,rookie:false}, {year:2013,teamId:108,rookie:false}, {year:2014,teamId:108,rookie:false}]},
+  
+   {id:59, name:"Miguel Pires", code:"PIR", number:null, nationality:"Portugal", birthYear:null,
+   currentTeamId:8, debutYear:2015, lastYear:2019, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Miguel Pires made their Formula One debut with Faucon in 2015. They later moved on to race for Equin in 2018. Their last season on the grid was 2019, with Equin.",
+   history:[{year:2015,teamId:6,rookie:true}, {year:2016,teamId:6,rookie:false}, {year:2017,teamId:6,rookie:false}, {year:2018,teamId:8,rookie:false}, {year:2019,teamId:8,rookie:false}]},
+  
+   {id:60, name:"Mikael Rantanen", code:"RAN", number:null, nationality:"Finland", birthYear:null,
+   currentTeamId:105, debutYear:2002, lastYear:2006, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Mikael Rantanen made their Formula One debut with Kimura in 2002. They later moved on to race for Inara in 2005. Their last season on the grid was 2006, with Inara.",
+   history:[{year:2002,teamId:107,rookie:true}, {year:2003,teamId:107,rookie:false}, {year:2004,teamId:107,rookie:false}, {year:2005,teamId:105,rookie:false}, {year:2006,teamId:105,rookie:false}]},
+  
+   {id:61, name:"Mikhail Fedorov", code:"FED", number:null, nationality:"Russia", birthYear:null,
+   currentTeamId:2, debutYear:2000, lastYear:2005, stillActive:false, upcoming:false,
+   achievements:"1x WDC", wins:0, podiums:0, poles:0,
+   bio:"Mikhail Fedorov made their Formula One debut with Cavalla Nera in 2000. Their last season on the grid was 2005, with Cavalla Nera. Career honours: 1x WDC.",
+   history:[{year:2000,teamId:2,rookie:false}, {year:2001,teamId:2,rookie:false}, {year:2002,teamId:2,rookie:false}, {year:2003,teamId:2,rookie:false}, {year:2004,teamId:2,rookie:false}, {year:2005,teamId:2,rookie:false}]},
+  
+   {id:62, name:"Nathan Gallagher", code:"GAL", number:null, nationality:"Australia", birthYear:null,
+   currentTeamId:3, debutYear:2012, lastYear:2014, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Nathan Gallagher made their Formula One debut with Refresh in 2012. Their last season on the grid was 2014, with Refresh.",
+   history:[{year:2012,teamId:3,rookie:true}, {year:2013,teamId:3,rookie:false}, {year:2014,teamId:3,rookie:false}]},
+  
+   {id:63, name:"Nicola Cherubini", code:"CHE", number:98, nationality:"Italy", birthYear:2005,
+   currentTeamId:10, debutYear:2025, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Nicola Cherubini made their Formula One debut with Leonides in 2025. They remain on the grid with Leonides heading into 2026.",
+   history:[{year:2025,teamId:10,rookie:true}, {year:2026,teamId:10,rookie:false}]},
+  
+   {id:64, name:"Niels Verhoeven", code:"VER", number:null, nationality:"Netherlands", birthYear:null,
+   currentTeamId:8, debutYear:2001, lastYear:2003, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Niels Verhoeven made their Formula One debut with Equin in 2001. Their last season on the grid was 2003, with Equin.",
+   history:[{year:2001,teamId:8,rookie:true}, {year:2002,teamId:8,rookie:false}, {year:2003,teamId:8,rookie:false}]},
+  
+   {id:65, name:"Niklas Mohrbacher", code:"MOH", number:66, nationality:"Germany", birthYear:2000,
+   currentTeamId:9, debutYear:2023, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Niklas Mohrbacher made their Formula One debut with Atlas Petrol in 2023. They remain on the grid with Atlas Petrol heading into 2026.",
+   history:[{year:2023,teamId:9,rookie:true}, {year:2024,teamId:9,rookie:false}, {year:2025,teamId:9,rookie:false}, {year:2026,teamId:9,rookie:false}]},
+  
+   {id:66, name:"Niko Koskimies", code:"KOS", number:27, nationality:"Finland", birthYear:1998,
+   currentTeamId:3, debutYear:2020, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Niko Koskimies made their Formula One debut with Atlas Petrol in 2020. They later moved on to race for Refresh in 2024. They remain on the grid with Refresh heading into 2026.",
+   history:[{year:2020,teamId:9,rookie:true}, {year:2021,teamId:9,rookie:false}, {year:2022,teamId:9,rookie:false}, {year:2023,teamId:9,rookie:false}, {year:2024,teamId:3,rookie:false}, {year:2025,teamId:3,rookie:false}, {year:2026,teamId:3,rookie:false}]},
+  
+   {id:67, name:"Oliver Hughes", code:"HUG", number:null, nationality:"New Zealand", birthYear:null,
+   currentTeamId:9, debutYear:2004, lastYear:2018, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Oliver Hughes made their Formula One debut with Atlantica in 2004. They later moved on to race for MerQury in 2009, then Refresh in 2010, then Faucon in 2012, then Atlas Petrol in 2015. Their last season on the grid was 2018, with Atlas Petrol.",
+   history:[{year:2004,teamId:106,rookie:true}, {year:2005,teamId:106,rookie:false}, {year:2006,teamId:106,rookie:false}, {year:2007,teamId:106,rookie:false}, {year:2008,teamId:106,rookie:false}, {year:2009,teamId:4,rookie:false}, {year:2010,teamId:3,rookie:false}, {year:2011,teamId:3,rookie:false}, {year:2012,teamId:6,rookie:false}, {year:2013,teamId:6,rookie:false}, {year:2014,teamId:6,rookie:false}, {year:2015,teamId:9,rookie:false}, {year:2016,teamId:9,rookie:false}, {year:2017,teamId:9,rookie:false}, {year:2018,teamId:9,rookie:false}]},
+  
+   {id:68, name:"Omar Lopez", code:"LOP", number:null, nationality:"Spain", birthYear:null,
+   currentTeamId:7, debutYear:2018, lastYear:2018, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Omar Lopez made their Formula One debut with ACXS in 2018. Their last season on the grid was 2018, with ACXS.",
+   history:[{year:2018,teamId:7,rookie:true}]},
+  
+   {id:69, name:"Oskar Hajek", code:"HAJ", number:76, nationality:"Czechia", birthYear:2005,
+   currentTeamId:1, debutYear:2025, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Oskar Hajek made their Formula One debut with Kinghorn in 2025. They remain on the grid with Kinghorn heading into 2026.",
+   history:[{year:2025,teamId:1,rookie:true}, {year:2026,teamId:1,rookie:false}]},
+  
+   {id:70, name:"Owen Newman", code:"NEW", number:13, nationality:"USA", birthYear:2006,
+   currentTeamId:2, debutYear:2025, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Owen Newman made their Formula One debut with Cavalla Nera in 2025. They remain on the grid with Cavalla Nera heading into 2026.",
+   history:[{year:2025,teamId:2,rookie:true}, {year:2026,teamId:2,rookie:false}]},
+  
+   {id:71, name:"Pascal Fang", code:"FAN", number:31, nationality:"China", birthYear:1996,
+   currentTeamId:7, debutYear:2019, lastYear:2024, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Pascal Fang made their Formula One debut with Cavalla Nera in 2019. They later moved on to race for ACXS in 2021. Their last season on the grid was 2024, with ACXS.",
+   history:[{year:2019,teamId:2,rookie:true}, {year:2020,teamId:2,rookie:false}, {year:2021,teamId:7,rookie:false}, {year:2022,teamId:7,rookie:false}, {year:2023,teamId:7,rookie:false}, {year:2024,teamId:7,rookie:false}]},
+  
+   {id:72, name:"Pieter van der Merwe", code:"MER", number:null, nationality:"South Africa", birthYear:null,
+   currentTeamId:102, debutYear:2003, lastYear:2008, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Pieter van der Merwe made their Formula One debut with Faucon in 2003. They later moved on to race for Lynx in 2007. Their last season on the grid was 2008, with Lynx.",
+   history:[{year:2003,teamId:6,rookie:true}, {year:2004,teamId:6,rookie:false}, {year:2005,teamId:6,rookie:false}, {year:2006,teamId:6,rookie:false}, {year:2007,teamId:102,rookie:false}, {year:2008,teamId:102,rookie:false}]},
+  
+   {id:73, name:"Rafael Silveira", code:"SIL", number:30, nationality:"Brazil", birthYear:2003,
+   currentTeamId:8, debutYear:2024, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Rafael Silveira made their Formula One debut with Equin in 2024. They remain on the grid with Equin heading into 2026.",
+   history:[{year:2024,teamId:8,rookie:true}, {year:2025,teamId:8,rookie:false}, {year:2026,teamId:8,rookie:false}]},
+  
+   {id:74, name:"Catalina Robles", code:"ROB", number:null, nationality:"Spain", birthYear:null,
+   currentTeamId:null, debutYear:2027, lastYear:null, stillActive:true, upcoming:true,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Catalina Robles is set to make their Formula One debut in 2027, joining a team yet to be confirmed.",
+   history:[]},
+  
+   {id:75, name:"Roswell Holt", code:"HOL", number:null, nationality:"New Zealand", birthYear:null,
+   currentTeamId:6, debutYear:2022, lastYear:2022, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Roswell Holt made their Formula One debut with Faucon in 2022. Their last season on the grid was 2022, with Faucon.",
+   history:[{year:2022,teamId:6,rookie:true}]},
+  
+   {id:76, name:"Santiago de Ruiz", code:"DER", number:42, nationality:"Mexico", birthYear:1995,
+   currentTeamId:7, debutYear:2017, lastYear:2026, stillActive:true, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Santiago de Ruiz made their Formula One debut with VentoGrigio in 2017. They later moved on to race for Cavalla Nera in 2021, then ACXS in 2025. They remain on the grid with ACXS heading into 2026.",
+   history:[{year:2017,teamId:103,rookie:true}, {year:2018,teamId:103,rookie:false}, {year:2019,teamId:103,rookie:false}, {year:2020,teamId:103,rookie:false}, {year:2021,teamId:2,rookie:false}, {year:2022,teamId:2,rookie:false}, {year:2023,teamId:2,rookie:false}, {year:2024,teamId:2,rookie:false}, {year:2025,teamId:7,rookie:false}, {year:2026,teamId:7,rookie:false}]},
+  
+   {id:77, name:"Sashi Iyer", code:"IYE", number:null, nationality:"India", birthYear:1977,
+   currentTeamId:102, debutYear:2001, lastYear:2004, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Sashi Iyer made their Formula One debut with Atlas in 2001. They later moved on to race for Lynx in 2002. Their last season on the grid was 2004, with Lynx.",
+   history:[{year:2001,teamId:109,rookie:true}, {year:2002,teamId:102,rookie:false}, {year:2003,teamId:102,rookie:false}, {year:2004,teamId:102,rookie:false}]},
+  
+   {id:78, name:"Scott Fraser", code:"FRS", number:null, nationality:"UK", birthYear:null,
+   currentTeamId:4, debutYear:2000, lastYear:2012, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Scott Fraser made their Formula One debut with Atlantica in 2000. They later moved on to race for Equin in 2002, then Inara in 2007, then MerQury in 2009. Their last season on the grid was 2012, with MerQury.",
+   history:[{year:2000,teamId:106,rookie:false}, {year:2001,teamId:106,rookie:false}, {year:2002,teamId:8,rookie:false}, {year:2003,teamId:8,rookie:false}, {year:2004,teamId:8,rookie:false}, {year:2005,teamId:8,rookie:false}, {year:2006,teamId:8,rookie:false}, {year:2007,teamId:105,rookie:false}, {year:2008,teamId:105,rookie:false}, {year:2009,teamId:4,rookie:false}, {year:2010,teamId:4,rookie:false}, {year:2011,teamId:4,rookie:false}, {year:2012,teamId:4,rookie:false}]},
+  
+   {id:79, name:"Thijs Dekker", code:"DEK", number:null, nationality:"Netherlands", birthYear:null,
+   currentTeamId:3, debutYear:2000, lastYear:2002, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Thijs Dekker made their Formula One debut with Refresh in 2000. Their last season on the grid was 2002, with Refresh.",
+   history:[{year:2000,teamId:3,rookie:false}, {year:2001,teamId:3,rookie:false}, {year:2002,teamId:3,rookie:false}]},
+  
+   {id:80, name:"Thomas Bailey", code:"BAI", number:null, nationality:"Australia", birthYear:null,
+   currentTeamId:2, debutYear:2006, lastYear:2018, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Thomas Bailey made their Formula One debut with Atlas Astraea in 2006. They later moved on to race for Cavalla Nera in 2011. Their last season on the grid was 2018, with Cavalla Nera.",
+   history:[{year:2006,teamId:108,rookie:true}, {year:2007,teamId:108,rookie:false}, {year:2008,teamId:108,rookie:false}, {year:2009,teamId:108,rookie:false}, {year:2010,teamId:108,rookie:false}, {year:2011,teamId:2,rookie:false}, {year:2012,teamId:2,rookie:false}, {year:2013,teamId:2,rookie:false}, {year:2014,teamId:2,rookie:false}, {year:2015,teamId:2,rookie:false}, {year:2016,teamId:2,rookie:false}, {year:2017,teamId:2,rookie:false}, {year:2018,teamId:2,rookie:false}]},
+  
+   {id:81, name:"Tiago Cardoso", code:"CAR", number:null, nationality:"Brazil", birthYear:null,
+   currentTeamId:3, debutYear:2006, lastYear:2013, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Tiago Cardoso made their Formula One debut with Equin in 2006. They later moved on to race for Lynx in 2010, then Refresh in 2012, then Lynx in 2012, then Refresh in 2013. Their last season on the grid was 2013, with Refresh.",
+   history:[{year:2006,teamId:8,rookie:true}, {year:2007,teamId:8,rookie:false}, {year:2008,teamId:8,rookie:false}, {year:2009,teamId:8,rookie:false}, {year:2010,teamId:102,rookie:false}, {year:2011,teamId:102,rookie:false}, {year:2012,teamId:3,rookie:false}, {year:2012,teamId:102,rookie:false}, {year:2013,teamId:3,rookie:false}]},
+  
+   {id:82, name:"Tuure Venäläinen", code:"VEN", number:null, nationality:"Finland", birthYear:null,
+   currentTeamId:108, debutYear:2000, lastYear:2005, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Tuure Venäläinen made their Formula One debut with Astraea in 2000. They later moved on to race for Atlas Astraea in 2002. Their last season on the grid was 2005, with Atlas Astraea.",
+   history:[{year:2000,teamId:101,rookie:false}, {year:2001,teamId:101,rookie:false}, {year:2002,teamId:108,rookie:false}, {year:2003,teamId:108,rookie:false}, {year:2004,teamId:108,rookie:false}, {year:2005,teamId:108,rookie:false}]},
+  
+   {id:83, name:"Valentijn Dekker", code:"DEK", number:null, nationality:"Netherlands", birthYear:null,
+   currentTeamId:9, debutYear:2020, lastYear:2022, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Valentijn Dekker made their Formula One debut with Leonides in 2020. They later moved on to race for Atlas Petrol in 2021. Their last season on the grid was 2022, with Atlas Petrol.",
+   history:[{year:2020,teamId:10,rookie:true}, {year:2021,teamId:9,rookie:false}, {year:2022,teamId:9,rookie:false}]},
+  
+   {id:84, name:"William Faulton", code:"FAU", number:null, nationality:"UK", birthYear:null,
+   currentTeamId:1, debutYear:2000, lastYear:2004, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"William Faulton made their Formula One debut with Equin in 2000. They later moved on to race for Kinghorn in 2002. Their last season on the grid was 2004, with Kinghorn.",
+   history:[{year:2000,teamId:8,rookie:false}, {year:2001,teamId:8,rookie:false}, {year:2002,teamId:1,rookie:false}, {year:2003,teamId:1,rookie:false}, {year:2004,teamId:1,rookie:false}]},
+  
+   {id:85, name:"Youssef Mansour", code:"MAN", number:null, nationality:"UAE", birthYear:null,
+   currentTeamId:10, debutYear:2002, lastYear:2011, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Youssef Mansour made their Formula One debut with Inara in 2002. They later moved on to race for Leonides in 2011. Their last season on the grid was 2011, with Leonides.",
+   history:[{year:2002,teamId:105,rookie:true}, {year:2003,teamId:105,rookie:false}, {year:2004,teamId:105,rookie:false}, {year:2005,teamId:105,rookie:false}, {year:2006,teamId:105,rookie:false}, {year:2007,teamId:105,rookie:false}, {year:2008,teamId:105,rookie:false}, {year:2009,teamId:105,rookie:false}, {year:2010,teamId:105,rookie:false}, {year:2011,teamId:10,rookie:false}]},
+  
+   {id:86, name:"Yuta Ikeda", code:"IKE", number:null, nationality:"Japan", birthYear:null,
+   currentTeamId:3, debutYear:2020, lastYear:2023, stillActive:false, upcoming:false,
+   achievements:null, wins:0, podiums:0, poles:0,
+   bio:"Yuta Ikeda made their Formula One debut with ACXS in 2020. They later moved on to race for Refresh in 2021. Their last season on the grid was 2023, with Refresh.",
+   history:[{year:2020,teamId:7,rookie:true}, {year:2021,teamId:3,rookie:false}, {year:2022,teamId:3,rookie:false}, {year:2023,teamId:3,rookie:false}]},
+];
 
 // ---- CIRCUITS (22 rounds used every season) — replace name/location/country/laps/length with real data ----
 const CIRCUITS = [];

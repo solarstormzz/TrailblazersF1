@@ -5,24 +5,47 @@ function teamById(id){ return TEAMS.find(t=>t.id===id); }
 // Looks up a team across both current TEAMS and former LEGACY_TEAMS.
 function teamByIdAny(id){ return TEAMS.find(t=>t.id===id) || LEGACY_TEAMS.find(t=>t.id===id); }
 function isLegacyTeam(id){ return !TEAMS.some(t=>t.id===id); }
+
 function driverById(id){ return DRIVERS.find(d=>d.id===id); }
-// Looks up a driver across both current DRIVERS and former LEGACY_DRIVERS.
-function driverByIdAny(id){ return DRIVERS.find(d=>d.id===id) || LEGACY_DRIVERS.find(d=>d.id===id); }
-function isLegacyDriver(id){ return !DRIVERS.some(d=>d.id===id); }
-function driversOfTeam(id){ return DRIVERS.filter(d=>d.teamId===id).concat(LEGACY_DRIVERS.filter(d=>d.teamId===id)); }
-// Returns every driver (current + legacy) who was on the grid for a given season,
-// so the Drivers overview can render accurate historical grids.
+// Kept as an alias for driverById -- every driver now lives in one DRIVERS array,
+// there's no separate "legacy drivers" list anymore (see history model below).
+function driverByIdAny(id){ return driverById(id); }
+// A driver counts as "former" once they're neither still active nor an upcoming rookie.
+function isFormerDriver(driver){ return !driver.stillActive && !driver.upcoming; }
+
+// ---- PER-SEASON DRIVER HISTORY ----
+// Every driver has a `history` array: [{year, teamId, rookie}, ...], one entry per season
+// they were on the grid, built from the season-by-season movement data. This replaces a
+// single static teamId, since real drivers change teams over their careers.
+// Resolves which team a driver was actually racing for in a given season. Falls back to
+// their current/incoming team if that year isn't in their history (e.g. requesting a year
+// outside their career span, or an "upcoming" driver with no seasons recorded yet).
+function teamOfDriverInYear(driver, year){
+  const entry = driver.history.find(h=>h.year===year);
+  const teamId = entry ? entry.teamId : driver.currentTeamId;
+  return teamId ? teamByIdAny(teamId) : null;
+}
+function wasRookieInYear(driver, year){
+  const entry = driver.history.find(h=>h.year===year);
+  return entry ? entry.rookie : false;
+}
+// Every driver who raced for a given team in a given season.
+function driversOfTeamInYear(teamId, year){
+  return DRIVERS.filter(d=> d.history.some(h=>h.year===year && h.teamId===teamId));
+}
+// "Current" roster for a team, used on the team profile page -- ignores season.
+function driversOfTeam(id){
+  return driversOfTeamInYear(id, CURRENT_YEAR);
+}
+// Returns every driver who was on the grid for a given season, so the Drivers overview
+// can render accurate historical grids.
 function driversForYear(year){
-  const current = DRIVERS.filter(d=> teamById(d.teamId).firstEntry<=year);
-  const legacy = LEGACY_DRIVERS.filter(d=> d.firstEntry<=year && year<=d.lastEntry);
-  return current.concat(legacy).sort((a,b)=> a.name.localeCompare(b.name));
+  return DRIVERS.filter(d=> d.history.some(h=>h.year===year)).sort((a,b)=> a.name.localeCompare(b.name));
 }
 // Year dropdown bounded to the years a specific driver was actually on the grid.
 function driverYearOptions(driver, selected){
-  const legacy = isLegacyDriver(driver.id);
-  const team = teamByIdAny(driver.teamId);
-  const maxY = legacy ? driver.lastEntry : CURRENT_YEAR;
-  const minY = Math.max(legacy ? driver.firstEntry : team.firstEntry, MIN_YEAR);
+  const maxY = driver.upcoming ? driver.debutYear : (driver.stillActive ? CURRENT_YEAR : driver.lastYear);
+  const minY = driver.upcoming ? driver.debutYear : Math.max(driver.debutYear, MIN_YEAR);
   let out = "";
   for(let y=maxY; y>=minY; y--){
     out += `<option value="${y}" ${y===selected?"selected":""}>${y}</option>`;
@@ -66,12 +89,14 @@ function raceStatus(year, date){
 function fmtDate(d){
   return d.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});
 }
-// Fixed, obviously-placeholder finishing order for every completed race: Driver 1..20 in order.
+// Fixed, obviously-placeholder finishing order for every driver who was actually on the
+// grid that season, in name order, each paired with the team they raced for that year.
 function raceResult(year, round){
-  return DRIVERS.map((d,i)=>({
+  const field = driversForYear(year);
+  return field.map((d,i)=>({
     pos:i+1,
     driver:d,
-    team:teamById(d.teamId),
+    team:teamOfDriverInYear(d, year),
     points: POINTS[i] || 0,
     time: i===0 ? "1:32:04.512" : "+"+(i*4.317).toFixed(3),
     gridStart: i+1
@@ -79,12 +104,13 @@ function raceResult(year, round){
 }
 function seasonStandings(year){
   const rounds = seasonRounds(year).filter(r => raceStatus(year, r.date)==="completed");
+  const field = driversForYear(year);
   const totals = {};
-  DRIVERS.forEach(d=> totals[d.id]=0 );
+  field.forEach(d=> totals[d.id]=0 );
   rounds.forEach(()=>{
     raceResult(year,1).forEach(r=>{ totals[r.driver.id]+= r.points; });
   });
-  return DRIVERS.map(d=>({driver:d, team:teamById(d.teamId), points:totals[d.id]}))
+  return field.map(d=>({driver:d, team:teamOfDriverInYear(d,year), points:totals[d.id]}))
     .sort((a,b)=> b.points-a.points);
 }
 function nextRace(){

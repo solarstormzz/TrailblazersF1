@@ -17,23 +17,26 @@ function newsCard(article){
     </div>
   </a>`;
 }
-function driverCard(d){
-  const team = teamByIdAny(d.teamId);
-  const legacy = isLegacyDriver(d.id);
+function driverCard(d, year){
+  const y = year || CURRENT_YEAR;
+  const team = teamOfDriverInYear(d, y) || teamByIdAny(d.currentTeamId) || {color:"#38383F", name:"TBD"};
+  const legacy = isFormerDriver(d);
+  const numLabel = d.number != null ? "#"+d.number : "—";
   return `<a class="driver-card" href="#/driver/${d.id}">
     <div class="driver-plate" style="background:linear-gradient(160deg, ${team.color}, #0D0D12 85%)">
-      <span class="bignum">${d.number}</span>
-      <span class="team-chip">${team.name}${legacy ? " — Former" : ""}</span>
+      <span class="bignum">${d.number != null ? d.number : d.code}</span>
+      <span class="team-chip">${team.name}${legacy ? " — Former" : ""}${d.upcoming ? " — Incoming" : ""}</span>
     </div>
     <div class="driver-card-body">
-      <div class="num-sm">#${d.number} — ${d.code}</div>
+      <div class="num-sm">${numLabel} — ${d.code}</div>
       <h3>${d.name}</h3>
       <div class="nat">${d.nationality}</div>
     </div>
   </a>`;
 }
-function teamCard(t){
-  const drivers = driversOfTeam(t.id);
+function teamCard(t, year){
+  const y = year || CURRENT_YEAR;
+  const drivers = driversOfTeamInYear(t.id, y);
   const legacy = isLegacyTeam(t.id);
   return `<a class="team-card" href="#/team/${t.id}">
     <div class="team-color-bar" style="background:${t.color}"></div>
@@ -41,7 +44,7 @@ function teamCard(t){
       <h3>${t.name}${legacy ? ` <span class="status-pill status-done" style="font-size:11px; vertical-align:middle;">Former</span>` : ""}</h3>
       <div class="full">${t.fullName}</div>
       <div class="team-drivers-mini">
-        ${drivers.map(d=>`<span class="mini-chip">#${d.number} ${d.name}</span>`).join("")}
+        ${drivers.map(d=>`<span class="mini-chip">${d.number!=null ? "#"+d.number+" " : ""}${d.name}</span>`).join("")}
       </div>
     </div>
   </a>`;

@@ -219,26 +219,26 @@ function pageDrivers(year){
         ${yearOptions(y)}
       </select>
     </div>
-    <div class="grid-3">${drivers.map(driverCard).join("")}</div>
+    <div class="grid-3">${drivers.map(d=>driverCard(d,y)).join("")}</div>
   </section>`;
 }
 
 function pageDriverDetail(id, year){
-  const d = driverByIdAny(Number(id));
+  const d = driverById(Number(id));
   if(!d) return notFound("Driver");
-  const legacy = isLegacyDriver(d.id);
-  const team = teamByIdAny(d.teamId);
-  const defaultYear = legacy ? d.lastEntry : CURRENT_YEAR;
+  const legacy = isFormerDriver(d);
+  const defaultYear = d.upcoming ? d.debutYear : (d.stillActive ? CURRENT_YEAR : d.lastYear);
   const y = year ? Number(year) : defaultYear;
-  const stats = driverSeasonStats(d.id, y);
+  const team = teamOfDriverInYear(d, y) || teamByIdAny(d.currentTeamId) || {id:null, name:"TBD", color:"#38383F"};
+  const stats = d.upcoming ? null : driverSeasonStats(d.id, y);
   return `<section class="container">
     <div class="breadcrumb" style="padding-top:20px;"><a href="#/drivers">Drivers</a> / ${d.name}</div>
   </section>
   <section class="detail-hero container">
-    <div class="detail-num" style="color:${team.color}">${d.number}</div>
+    <div class="detail-num" style="color:${team.color}">${d.number != null ? d.number : d.code}</div>
     <div class="detail-titles">
       <h1>${d.name}</h1>
-      <div class="team-line"><a href="#/team/${team.id}">${team.name}</a> — ${d.code}${legacy ? ` <span class="status-pill status-done" style="font-size:11px; vertical-align:middle;">Former</span>` : ""}</div>
+      <div class="team-line">${team.id ? `<a href="#/team/${team.id}">${team.name}</a>` : team.name} — ${d.code}${legacy ? ` <span class="status-pill status-done" style="font-size:11px; vertical-align:middle;">Former</span>` : ""}${d.upcoming ? ` <span class="status-pill" style="font-size:11px; vertical-align:middle;">Incoming ${d.debutYear}</span>` : ""}</div>
     </div>
   </section>
   <section class="section container">
@@ -249,24 +249,23 @@ function pageDriverDetail(id, year){
     </div>
     <div class="info-list">
       <div class="info-row"><div class="k">Nationality</div><div class="v">${d.nationality}</div></div>
-      <div class="info-row"><div class="k">Date of Birth</div><div class="v">${d.dob}</div></div>
+      <div class="info-row"><div class="k">Born</div><div class="v">${d.birthYear || "—"}</div></div>
       <div class="info-row"><div class="k">Team</div><div class="v">${team.name}</div></div>
-      <div class="info-row"><div class="k">Car Number</div><div class="v">#${d.number}</div></div>
+      <div class="info-row"><div class="k">Car Number</div><div class="v">${d.number != null ? "#"+d.number : "—"}</div></div>
+      ${d.achievements ? `<div class="info-row"><div class="k">Honours</div><div class="v">${d.achievements}</div></div>` : ""}
     </div>
 
     <div class="section-head" style="margin-top:44px;"><h2 style="font-size:22px;">Biography</h2></div>
-    <div class="info-list">
-      <div class="info-row"><div class="k">Date of Birth</div><div class="v">${d.dob}</div></div>
-      <div class="info-row"><div class="k">Place of Birth</div><div class="v">${d.placeOfBirth || "—"}</div></div>
-    </div>
     ${d.bio ? `<p class="team-description">${d.bio}</p>` : ""}
 
-    ${driverResultsSection(d, y, stats)}
+    ${d.upcoming
+      ? `<div class="section-head" style="margin-top:44px;"><h2 style="font-size:22px;">Results</h2></div><p class="empty-note">${d.name} hasn't raced a season yet — check back once they've made their debut in ${d.debutYear}.</p>`
+      : driverResultsSection(d, y, stats)}
   </section>`;
 }
 
 function driverResultsSection(d, y, stats){
-  const team = teamByIdAny(d.teamId);
+  const team = teamOfDriverInYear(d, y) || teamByIdAny(d.currentTeamId);
   return `
     <div class="section-head" style="margin-top:44px;"><h2 style="font-size:22px;">Results</h2></div>
     <div class="select-row">
@@ -314,7 +313,7 @@ function pageTeams(year){
         ${yearOptions(y)}
       </select>
     </div>
-    <div class="grid-3">${teams.map(teamCard).join("")}</div>
+    <div class="grid-3">${teams.map(t=>teamCard(t,y)).join("")}</div>
   </section>`;
 }
 
@@ -322,9 +321,9 @@ function pageTeamDetail(id, year){
   const t = teamByIdAny(Number(id));
   if(!t) return notFound("Team");
   const legacy = isLegacyTeam(t.id);
-  const drivers = driversOfTeam(t.id);
   const defaultYear = legacy ? t.lastEntry : CURRENT_YEAR;
   const y = year ? Number(year) : defaultYear;
+  const drivers = driversOfTeamInYear(t.id, y);
   const stats = teamSeasonStats(t.id, y);
   return `<section class="container">
     <div class="breadcrumb" style="padding-top:20px;"><a href="#/teams">Teams</a> / ${t.name}</div>
@@ -352,8 +351,8 @@ function pageTeamDetail(id, year){
       <div class="info-row"><div class="k">Power Unit</div><div class="v">${t.powerUnit}</div></div>
     </div>
     ${drivers.length ? `
-    <div class="section-head" style="margin-top:44px;"><h2 style="font-size:22px;">Drivers</h2></div>
-    <div class="grid-3">${drivers.map(driverCard).join("")}</div>` : ""}
+    <div class="section-head" style="margin-top:44px;"><h2 style="font-size:22px;">Drivers — ${y}</h2></div>
+    <div class="grid-3">${drivers.map(d=>driverCard(d,y)).join("")}</div>` : ""}
     ${teamResultsSection(t, y, stats)}
   </section>`;
 }

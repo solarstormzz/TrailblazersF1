@@ -14,6 +14,7 @@
      - Circuit data:        js/data.js  (CIRCUITS)
      - News articles:       js/data.js  (NEWS)
      - Site name:           js/data.js  (SITE_NAME / SITE_SHORT)
+     - Real race results:   js/results.js  (RACE_RESULTS, by season/round)
      ========================================================= -->
 <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -46,8 +47,9 @@
   </div>
 </footer>
 
-<!-- Scripts load in dependency order: data -> helpers -> components -> pages -> router -->
+<!-- Scripts load in dependency order: data -> results -> helpers -> components -> pages -> router -->
 <script src="js/data.js"></script>
+<script src="js/results.js"></script>
 <script src="js/helpers.js"></script>
 <script src="js/components.js"></script>
 <script src="js/pages.js"></script>

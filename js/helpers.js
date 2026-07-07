@@ -69,7 +69,8 @@ function seasonRounds(year){
     return SCHEDULES[year].map((race,i)=>({
       round: i+1,
       circuit: {id:`${year}-${i+1}`, name:race.name, location:race.location, country:race.country, laps:race.laps, length:race.length},
-      date: new Date(race.date+"T00:00:00")
+      date: new Date(race.date+"T00:00:00"),
+      sprint: !!race.sprint
     }));
   }
   const rounds = [];
@@ -77,7 +78,7 @@ function seasonRounds(year){
   for(let i=0;i<CIRCUITS.length;i++){
     const d = new Date(start);
     d.setDate(d.getDate() + i*14);
-    rounds.push({round:i+1, circuit:CIRCUITS[i], date:d});
+    rounds.push({round:i+1, circuit:CIRCUITS[i], date:d, sprint:false});
   }
   return rounds;
 }
@@ -89,17 +90,70 @@ function raceStatus(year, date){
 function fmtDate(d){
   return d.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});
 }
+// Deterministic per-round "qualifying" strength, distinct from the season strength used
+// for finishing order below -- gives each round its own starting grid instead of the
+// grid always matching the finish order.
+function gridStrength(driverId, year, round){
+  return seededRand(driverId*5303 + year*211 + round*577 + 7919);
+}
+function sprintGridStrength(driverId, year, round){
+  return seededRand(driverId*3299 + year*151 + round*331 + 4133);
+}
 // Fixed, obviously-placeholder finishing order for every driver who was actually on the
 // grid that season, in name order, each paired with the team they raced for that year.
+// Starting grid slot is generated separately per round via gridStrength() above.
+// Looks up a stored real result session (e.g. RACE_RESULTS[year][round].race) and, if
+// present, converts it into the same shape the rest of the site expects. Starting grid
+// isn't tracked separately yet -- until real qualifying data is added, gridStart just
+// mirrors the session's own finishing order (see the note atop js/results.js).
+function realSessionResult(year, round, sessionKey){
+  const stored = RACE_RESULTS[year] && RACE_RESULTS[year][round] && RACE_RESULTS[year][round][sessionKey];
+  if(!stored) return null;
+  return stored.map((e,i)=>({
+    pos: e.classified ? e.pos : "NC",
+    driver: driverById(e.driverId),
+    team: teamByIdAny(e.teamId),
+    points: e.points,
+    time: e.time,
+    gridStart: i+1
+  }));
+}
 function raceResult(year, round){
+  const real = realSessionResult(year, round, "race");
+  if(real) return real;
   const field = driversForYear(year);
+  const gridOrder = field.slice().sort((a,b)=> gridStrength(b.id,year,round) - gridStrength(a.id,year,round));
+  const gridPos = {};
+  gridOrder.forEach((d,i)=>{ gridPos[d.id] = i+1; });
   return field.map((d,i)=>({
     pos:i+1,
     driver:d,
     team:teamOfDriverInYear(d, year),
     points: POINTS[i] || 0,
     time: i===0 ? "1:32:04.512" : "+"+(i*4.317).toFixed(3),
-    gridStart: i+1
+    gridStart: gridPos[d.id]
+  }));
+}
+// Fixed, obviously-placeholder finishing order for the Saturday Sprint on weekends that
+// have one. Uses each driver's season "strength" (also used for the season stats
+// generator) to rank the field, so the order differs from the Sunday Grand Prix instead
+// of just repeating it. Top 8 only score points, per SPRINT_POINTS.
+function sprintResult(year, round){
+  const real = realSessionResult(year, round, "sprint");
+  if(real) return real;
+  const field = driversForYear(year)
+    .slice()
+    .sort((a,b)=> driverStrength(b.id,year) - driverStrength(a.id,year));
+  const gridOrder = field.slice().sort((a,b)=> sprintGridStrength(b.id,year,round) - sprintGridStrength(a.id,year,round));
+  const gridPos = {};
+  gridOrder.forEach((d,i)=>{ gridPos[d.id] = i+1; });
+  return field.map((d,i)=>({
+    pos:i+1,
+    driver:d,
+    team:teamOfDriverInYear(d, year),
+    points: SPRINT_POINTS[i] || 0,
+    time: i===0 ? "28:11.204" : "+"+(i*2.114).toFixed(3),
+    gridStart: gridPos[d.id]
   }));
 }
 function seasonStandings(year){
@@ -107,16 +161,107 @@ function seasonStandings(year){
   const field = driversForYear(year);
   const totals = {};
   field.forEach(d=> totals[d.id]=0 );
-  rounds.forEach(()=>{
-    raceResult(year,1).forEach(r=>{ totals[r.driver.id]+= r.points; });
+  rounds.forEach(r=>{
+    raceResult(year, r.round).forEach(res=>{ totals[res.driver.id]+= res.points; });
+    if(r.sprint){
+      sprintResult(year, r.round).forEach(res=>{ totals[res.driver.id]+= res.points; });
+    }
   });
   return field.map(d=>({driver:d, team:teamOfDriverInYear(d,year), points:totals[d.id]}))
     .sort((a,b)=> b.points-a.points);
 }
+/* =========================================================
+   LAP-BY-LAP REPORT (placeholder generator)
+   Builds a deterministic race-leader timeline, a pit stop log for the top
+   finishers, and a fastest-lap marker for a given round -- there's no real
+   per-lap telemetry, so this is generated from the same seeded-random
+   approach used by the season/grid stats above.
+   ========================================================= */
+function raceLapReport(year, round, circuit){
+  const results = raceResult(year, round);
+  const totalLaps = circuit.laps;
+  const poleSitter = results.slice().sort((a,b)=> a.gridStart-b.gridStart)[0];
+  const winner = results[0];
+
+  // Leader timeline: the pole-sitter leads from the start; if they aren't the
+  // eventual winner, a single deterministic lead change hands it to the winner.
+  const segments = [];
+  if(poleSitter.driver.id === winner.driver.id){
+    segments.push({from:1, to:totalLaps, driver:poleSitter.driver, team:poleSitter.team});
+  } else {
+    const changeLap = Math.min(totalLaps-1, Math.max(2, 1+Math.round(seededRand(year*7+round*31)*(totalLaps-2))));
+    segments.push({from:1, to:changeLap, driver:poleSitter.driver, team:poleSitter.team});
+    segments.push({from:changeLap+1, to:totalLaps, driver:winner.driver, team:winner.team});
+  }
+
+  // Pit stops for the top 10 finishers: 1-2 stops each, on deterministic laps.
+  const pitStops = results.slice(0, Math.min(10, results.length)).map(res=>{
+    const stopCount = 1 + Math.round(seededRand(res.driver.id*13 + round*3));
+    const laps = [];
+    for(let s=0; s<stopCount; s++){
+      const lap = Math.min(totalLaps-1, Math.max(2, 3+Math.round(seededRand(res.driver.id*19 + round*5 + s*211)*(totalLaps-6))));
+      laps.push(lap);
+    }
+    laps.sort((a,b)=>a-b);
+    return {driver:res.driver, team:res.team, laps};
+  });
+
+  const fastestLapNum = Math.min(totalLaps-1, Math.max(2, 3+Math.round(seededRand(year*3+round*11)*(totalLaps-6))));
+
+  return {totalLaps, segments, pitStops, fastestLapDriver: winner.driver, fastestLapNum};
+}
+
 function nextRace(){
   const rounds = seasonRounds(CURRENT_YEAR);
   return rounds.find(r => raceStatus(CURRENT_YEAR, r.date)==="upcoming") || null;
 }
+
+/* =========================================================
+   DRIVER BIOGRAPHY DETAILS (placeholder generator)
+   The dataset only stores a driver's birth year (and an occasional free-text
+   "achievements" string like "8 x WDC"), not a full date/place of birth or a
+   WDC count as a number. These helpers derive stable, deterministic values
+   from what we do have, in the same spirit as the season-stats generators
+   above -- replace with real biographical data once it exists.
+   ========================================================= */
+const BIRTH_CITIES = {
+  "Argentina":["Buenos Aires","Córdoba","Rosario"], "Australia":["Melbourne","Sydney","Brisbane"],
+  "Belgium":["Brussels","Antwerp","Liège"], "Brazil":["São Paulo","Rio de Janeiro","Curitiba"],
+  "Canada":["Toronto","Montreal","Vancouver"], "China":["Shanghai","Beijing","Guangzhou"],
+  "Czechia":["Prague","Brno","Ostrava"], "Denmark":["Copenhagen","Aarhus","Odense"],
+  "Egypt":["Cairo","Alexandria","Giza"], "Estonia":["Tallinn","Tartu","Narva"],
+  "Finland":["Helsinki","Espoo","Tampere"], "France":["Paris","Lyon","Marseille"],
+  "Germany":["Berlin","Munich","Cologne"], "India":["Mumbai","Delhi","Bangalore"],
+  "Ireland":["Dublin","Cork","Galway"], "Italy":["Rome","Milan","Bologna"],
+  "Japan":["Tokyo","Osaka","Nagoya"], "Mexico":["Mexico City","Guadalajara","Monterrey"],
+  "Netherlands":["Amsterdam","Rotterdam","Utrecht"], "New Zealand":["Auckland","Wellington","Christchurch"],
+  "Poland":["Warsaw","Kraków","Wrocław"], "Portugal":["Lisbon","Porto","Braga"],
+  "Russia":["Moscow","Saint Petersburg","Kazan"], "San Marino":["City of San Marino","Serravalle","Borgo Maggiore"],
+  "Scotland":["Edinburgh","Glasgow","Aberdeen"], "South Africa":["Johannesburg","Cape Town","Pretoria"],
+  "South Korea":["Seoul","Busan","Incheon"], "Spain":["Madrid","Barcelona","Valencia"],
+  "Sweden":["Stockholm","Gothenburg","Malmö"], "Switzerland":["Zurich","Geneva","Basel"],
+  "Thailand":["Bangkok","Chiang Mai","Phuket"], "UAE":["Dubai","Abu Dhabi","Sharjah"],
+  "UK":["London","Manchester","Birmingham"], "USA":["Miami","Austin","Los Angeles"]
+};
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+// Deterministic date + city of birth, seeded off the driver's id so it's stable
+// across renders. Returns "—" for both fields when we don't even have a birth year.
+function driverBirthDetails(driver){
+  if(!driver.birthYear) return {dob:"—", place:"—"};
+  const cities = BIRTH_CITIES[driver.nationality] || [driver.nationality];
+  const city = cities[Math.floor(seededRand(driver.id*331+7)*cities.length)];
+  const month = MONTH_NAMES[Math.floor(seededRand(driver.id*911+3)*12)];
+  const day = 1 + Math.floor(seededRand(driver.id*173+11)*28);
+  return {dob:`${day} ${month} ${driver.birthYear}`, place:`${city}, ${driver.nationality}`};
+}
+// Extracts a numeric World Drivers' Championship count out of the free-text
+// "achievements" field (e.g. "8 x WDC" -> 8). Defaults to 0 when unset/unparsed.
+function driverWDCCount(driver){
+  if(!driver.achievements) return 0;
+  const m = driver.achievements.match(/(\d+)\s*x?\s*WDC/i);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
 
 /* =========================================================
    TEAM SEASON STATS (placeholder generator)

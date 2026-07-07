@@ -49,6 +49,46 @@ function teamCard(t, year){
     </div>
   </a>`;
 }
+// Full result table: Pos / Driver / Team / Grid / Time-Gap / Points.
+// Shared by the Grand Prix and Sprint "result" views on the race page.
+function finalResultTable(results){
+  return `<table class="results-table">
+    <thead><tr><th>Pos</th><th>Driver</th><th>Team</th><th>Grid</th><th>Time / Gap</th><th>Points</th></tr></thead>
+    <tbody>
+      ${results.map(res=>`<tr>
+        <td class="pos">${res.pos}</td>
+        <td><a href="#/driver/${res.driver.id}">${res.driver.name}</a></td>
+        <td><a href="#/team/${res.team.id}">${res.team.resultsName || res.team.name}</a></td>
+        <td>${res.gridStart}</td>
+        <td>${res.time}</td>
+        <td>${res.points || "—"}</td>
+      </tr>`).join("")}
+    </tbody>
+  </table>`;
+}
+// Starting grid table: Grid / Driver / Team, ordered by grid slot rather than finish.
+// Shared by the Grand Prix and Sprint "grid" views on the race page.
+function startingGridTable(results){
+  const grid = results.slice().sort((a,b)=> a.gridStart-b.gridStart);
+  return `<table class="results-table">
+    <thead><tr><th>Grid</th><th>Driver</th><th>Team</th></tr></thead>
+    <tbody>
+      ${grid.map(res=>`<tr>
+        <td class="pos">${res.gridStart}</td>
+        <td><a href="#/driver/${res.driver.id}">${res.driver.name}</a></td>
+        <td><a href="#/team/${res.team.id}">${res.team.resultsName || res.team.name}</a></td>
+      </tr>`).join("")}
+    </tbody>
+  </table>`;
+}
+// Toggles between the race page's Final Result / Starting Grid / Sprint views.
+// A single instance of this lives globally; only one race page is ever mounted at a time.
+function switchRaceView(id){
+  document.querySelectorAll(".race-view").forEach(v=>{
+    v.style.display = (v.id === id) ? "" : "none";
+  });
+}
+
 function yearOptions(selected){
   let out = "";
   for(let y=CURRENT_YEAR; y>=MIN_YEAR; y--){

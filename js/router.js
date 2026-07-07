@@ -19,6 +19,8 @@ function render(){
     html = pageResultsIndex();
   } else if(parts[0]==="results" && parts.length===2){
     html = pageResultsIndex(parts[1]);
+  } else if(parts[0]==="race" && parts.length===4 && parts[3]==="laps"){
+    html = pageRaceLaps(parts[1], parts[2]);
   } else if(parts[0]==="race"){
     html = pageRace(parts[1], parts[2]);
   } else if(parts[0]==="drivers" && parts.length===1){

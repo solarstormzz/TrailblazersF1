@@ -112,7 +112,7 @@ function pageSchedule(){
         return `<a class="round-card ${isDone?"done":""}" href="${isDone ? "#/race/"+CURRENT_YEAR+"/"+r.round : "#/schedule"}">
           <div class="round-num">${String(r.round).padStart(2,"0")}</div>
           <div class="round-info">
-            <h3>${r.circuit.name}${r.sprint ? ` <span class="status-pill status-sprint">Sprint</span>` : ""}</h3>
+            <h3>${r.circuit.name}${r.sprint ? ` <span class="status-pill status-sprint">Sprint Weekend</span>` : ""}</h3>
             <div class="loc">${r.circuit.location}, ${r.circuit.country} — ${r.circuit.laps} laps, ${r.circuit.length} km</div>
           </div>
           <div class="round-date">
@@ -150,7 +150,7 @@ function pageResultsIndex(year){
         return `<a class="round-card done" href="#/race/${y}/${r.round}">
           <div class="round-num">${String(r.round).padStart(2,"0")}</div>
           <div class="round-info">
-            <h3>${r.circuit.name}${r.sprint ? ` <span class="status-pill status-sprint">Sprint</span>` : ""}</h3>
+            <h3>${r.circuit.name}${r.sprint ? ` <span class="status-pill status-sprint">Sprint Weekend</span>` : ""}</h3>
             <div class="loc">${r.circuit.location}, ${r.circuit.country}</div>
             <div class="round-winner">Winner: <b>${winner.driver.name}</b> — ${winner.team.name}</div>
           </div>
@@ -199,12 +199,12 @@ function pageRace(year, round){
         ${r.sprint ? `<option value="view-sprint-grid">Sprint Grid</option>
         <option value="view-sprint-final">Sprint Result</option>` : ""}
         <option value="view-grid">Starting Grid</option>
-        <option value="view-final">Final Result</option>
+        <option value="view-final" selected>Final Result</option>
       </select>
     </div>
 
     ${r.sprint ? `
-    <div id="view-sprint-grid" class="race-view">
+    <div id="view-sprint-grid" class="race-view" style="display:none">
       <div class="fastlap-strip">
         <div><div class="k">Sprint Pole</div><div class="v">${sPole.driver.name}</div></div>
       </div>
@@ -227,14 +227,14 @@ function pageRace(year, round){
       ${finalResultTable(sResults)}
     </div>` : ""}
 
-    <div id="view-grid" class="race-view" style="display:${r.sprint ? "none" : ""}">
+    <div id="view-grid" class="race-view" style="display:none">
       <div class="fastlap-strip">
         <div><div class="k">Pole Position</div><div class="v">${pole.driver.name}</div></div>
       </div>
       ${startingGridTable(results)}
     </div>
 
-    <div id="view-final" class="race-view" style="display:none">
+    <div id="view-final" class="race-view">
       <div class="podium">
         ${top3.map((res,i)=>`<div class="podium-card p${i+1}">
           <div class="podium-pos">P${i+1}</div>
@@ -318,11 +318,13 @@ function pageDriverDetail(id, year){
   const team = teamOfDriverInYear(d, y) || teamByIdAny(d.currentTeamId) || {id:null, name:"TBD", color:"#38383F"};
   const stats = d.upcoming ? null : driverSeasonStats(d.id, y);
   const birth = driverBirthDetails(d);
+  const num = numberOfDriverInYear(d, y);
+  const career = driverCareerStats(d.id);
   return `<section class="container">
     <div class="breadcrumb" style="padding-top:20px;"><a href="#/drivers">Drivers</a> / ${d.name}</div>
   </section>
   <section class="detail-hero container">
-    <div class="detail-num" style="color:${team.color}">${d.number != null ? d.number : d.code}</div>
+    <div class="detail-num" style="color:${team.color}">${num != null ? num : d.code}</div>
     <div class="detail-titles">
       <h1>${d.name}</h1>
       <div class="team-line">${team.id ? `<a href="#/team/${team.id}">${team.name}</a>` : team.name} — ${d.code}${legacy ? ` <span class="status-pill status-done" style="font-size:11px; vertical-align:middle;">Former</span>` : ""}${d.upcoming ? ` <span class="status-pill" style="font-size:11px; vertical-align:middle;">Incoming ${d.debutYear}</span>` : ""}</div>
@@ -331,15 +333,15 @@ function pageDriverDetail(id, year){
   <section class="section container">
     <div class="stat-grid">
       <div class="stat-box"><div class="val">${driverWDCCount(d)}</div><div class="lab">WDCs</div></div>
-      <div class="stat-box"><div class="val">${d.wins}</div><div class="lab">Wins</div></div>
-      <div class="stat-box"><div class="val">${d.podiums}</div><div class="lab">Podiums</div></div>
-      <div class="stat-box"><div class="val">${d.poles}</div><div class="lab">Pole Positions</div></div>
+      <div class="stat-box"><div class="val">${career.wins}</div><div class="lab">Wins</div></div>
+      <div class="stat-box"><div class="val">${career.podiums}</div><div class="lab">Podiums</div></div>
+      <div class="stat-box"><div class="val">${career.poles}</div><div class="lab">Pole Positions</div></div>
     </div>
     <div class="info-list">
       <div class="info-row"><div class="k">Nationality</div><div class="v">${d.nationality}</div></div>
       <div class="info-row"><div class="k">Born</div><div class="v">${d.birthYear || "—"}</div></div>
       <div class="info-row"><div class="k">Team</div><div class="v">${team.name}</div></div>
-      <div class="info-row"><div class="k">Car Number</div><div class="v">${d.number != null ? "#"+d.number : "—"}</div></div>
+      <div class="info-row"><div class="k">Car Number</div><div class="v">${num != null ? "#"+num : "—"}</div></div>
     </div>
 
     <div class="section-head" style="margin-top:44px;"><h2 style="font-size:22px;">Biography</h2></div>

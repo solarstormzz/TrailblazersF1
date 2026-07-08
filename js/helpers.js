@@ -29,6 +29,21 @@ function wasRookieInYear(driver, year){
   const entry = driver.history.find(h=>h.year===year);
   return entry ? entry.rookie : false;
 }
+// Resolves the car number a driver actually raced with in a given season. A history
+// entry can carry its own `number` to record a mid-career number change (e.g. a driver
+// switching from #44 to #1 after a title); falls back to the driver's current/default
+// number when that season has no override on file.
+function numberOfDriverInYear(driver, year){
+  const entry = driver.history.find(h=>h.year===year);
+  if(entry && entry.number != null) return entry.number;
+  return driver.number;
+}
+// Short "initials" identifier derived from a driver's full name, e.g. "Alexander
+// Everill" -> "AE". Used together with numberOfDriverInYear() for the driver detail
+// page portrait (initials + number instead of the 3-letter code).
+function driverInitials(name){
+  return name.split(/\s+/).filter(Boolean).map(part=>part[0]).join("").toUpperCase();
+}
 // Every driver who raced for a given team in a given season.
 function driversOfTeamInYear(teamId, year){
   return DRIVERS.filter(d=> d.history.some(h=>h.year===year && h.teamId===teamId));
@@ -320,6 +335,68 @@ function driverStrength(driverId, year){
   return seededRand(driverId*8123 + year*131);
 }
 function driverSeasonStats(driverId, year){
+  if(RACE_RESULTS[year]) return realDriverSeasonStats(driverId, year);
+  return placeholderDriverSeasonStats(driverId, year);
+}
+// Builds season stats straight from RACE_RESULTS for seasons that have real per-race
+// data on file, instead of the deterministic placeholder generator below. Position
+// and points come from seasonStandings() (already real-data-aware); the rest is
+// tallied round-by-round from raceResult()/sprintResult().
+function realDriverSeasonStats(driverId, year){
+  const rounds = seasonRounds(year).filter(r=> raceStatus(year, r.date)==="completed");
+  let gpRounds=0, gpPoints=0, gpWins=0, gpPodiums=0, gpPoles=0, gpTop10=0, dns=0, dnf=0;
+  let sprintRounds=0, sprintPoints=0, sprintWins=0, sprintPodiums=0, sprintPoles=0, sprintTop8=0;
+  rounds.forEach(r=>{
+    const res = raceResult(year, r.round).find(x=>x.driver.id===driverId);
+    if(res){
+      gpRounds++;
+      gpPoints += res.points || 0;
+      if(res.pos===1) gpWins++;
+      if(typeof res.pos==="number" && res.pos<=3) gpPodiums++;
+      if(res.gridStart===1) gpPoles++;
+      if(typeof res.pos==="number" && res.pos<=10) gpTop10++;
+      if(res.time==="DNS") dns++;
+      else if(res.time==="DNF") dnf++;
+    }
+    if(r.sprint){
+      const sres = sprintResult(year, r.round).find(x=>x.driver.id===driverId);
+      if(sres){
+        sprintRounds++;
+        sprintPoints += sres.points || 0;
+        if(sres.pos===1) sprintWins++;
+        if(typeof sres.pos==="number" && sres.pos<=3) sprintPodiums++;
+        if(sres.gridStart===1) sprintPoles++;
+        if(typeof sres.pos==="number" && sres.pos<=8) sprintTop8++;
+      }
+    }
+  });
+  const standings = seasonStandings(year);
+  const position = Math.max(1, standings.findIndex(s=>s.driver.id===driverId) + 1);
+  return {
+    position, seasonPoints: gpPoints + sprintPoints,
+    gpRounds, gpPoints, gpWins, gpPodiums, gpPoles, gpTop10, dns, dnf,
+    sprintRounds, sprintPoints, sprintWins, sprintPodiums, sprintPoles, sprintTop8
+  };
+}
+// Career totals (Wins / Podiums / Pole Positions shown on the driver profile header)
+// tallied from every real season on file in RACE_RESULTS -- Grand Prix sessions only,
+// per the usual career-stat convention (sprints aren't counted).
+function driverCareerStats(driverId){
+  let wins=0, podiums=0, poles=0;
+  Object.keys(RACE_RESULTS).forEach(yearStr=>{
+    const year = Number(yearStr);
+    const rounds = seasonRounds(year).filter(r=> raceStatus(year, r.date)==="completed");
+    rounds.forEach(r=>{
+      const res = raceResult(year, r.round).find(x=>x.driver.id===driverId);
+      if(!res) return;
+      if(res.pos===1) wins++;
+      if(typeof res.pos==="number" && res.pos<=3) podiums++;
+      if(res.gridStart===1) poles++;
+    });
+  });
+  return {wins, podiums, poles};
+}
+function placeholderDriverSeasonStats(driverId, year){
   const drivers = driversForYear(year);
   const ranked = drivers.map(d=>({id:d.id, s:driverStrength(d.id, year)})).sort((a,b)=> b.s-a.s);
   const position = Math.max(1, ranked.findIndex(r=>r.id===driverId) + 1);

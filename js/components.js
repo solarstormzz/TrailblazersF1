@@ -4,7 +4,7 @@
 function newsCard(article){
   const team = article.teamId ? teamById(article.teamId) : null;
   const color = team ? team.color : "#38383F";
-  const label = team ? team.name.replace("Team ","T") : "GPC";
+  const label = team ? team.name.replace("Team ","T") : SITE_SHORT;
   return `<a class="news-card" href="#/article/${article.id}">
     <div class="news-thumb" style="background:linear-gradient(135deg, ${color}, #0D0D12)">
       <span class="news-tag">${article.tag}</span>
@@ -21,10 +21,11 @@ function driverCard(d, year){
   const y = year || CURRENT_YEAR;
   const team = teamOfDriverInYear(d, y) || teamByIdAny(d.currentTeamId) || {color:"#38383F", name:"TBD"};
   const legacy = isFormerDriver(d);
-  const numLabel = d.number != null ? "#"+d.number : "—";
+  const num = numberOfDriverInYear(d, y);
+  const numLabel = num != null ? "#"+num : "—";
   return `<a class="driver-card" href="#/driver/${d.id}">
     <div class="driver-plate" style="background:linear-gradient(160deg, ${team.color}, #0D0D12 85%)">
-      <span class="bignum">${d.number != null ? d.number : d.code}</span>
+      <span class="bignum">${driverInitials(d.name)}${num != null ? num : ""}</span>
       <span class="team-chip">${team.name}${legacy ? " — Former" : ""}${d.upcoming ? " — Incoming" : ""}</span>
     </div>
     <div class="driver-card-body">

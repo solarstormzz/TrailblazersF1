@@ -21,6 +21,8 @@
   background:var(--amber); color:var(--black); border:none; padding:9px 18px; border-radius:2px; cursor:pointer; }
 .btn-vault-save:hover{ background:#dbb662; }
 .btn-vault-save:disabled{ opacity:0.4; cursor:default; }
+.btn-vault-settings{ background:none; border:1px solid var(--line); color:var(--gray-light); width:36px; height:36px; border-radius:2px; cursor:pointer; font-size:15px; }
+.btn-vault-settings:hover{ border-color:var(--amber); color:var(--amber); }
 
 .vault-main{ padding:32px 0 80px; min-height:60vh; }
 

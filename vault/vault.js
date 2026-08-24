@@ -622,7 +622,51 @@ function renderGridTab(){
   draw();
 }
 
+/* ---------- settings panel (reachable any time via the header gear) ---------- */
+function renderSettingsPanel(){
+  const cfg = getConfig() || {};
+  const app = document.getElementById("vaultApp");
+  app.innerHTML = `
+    <div class="vault-setup">
+      <h1>Connection settings</h1>
+      <p>Update your token if it's expired or been rotated. Your Gist ID stays the same \u2014 this only changes how the Vault authenticates.</p>
+      <div class="vault-field">
+        <label>New personal access token (gist scope)</label>
+        <input type="password" id="settingsToken" placeholder="ghp_\u2026" autocomplete="off">
+      </div>
+      <div class="vault-field">
+        <label>Gist ID</label>
+        <input type="text" id="settingsGistId" value="${esc(cfg.gistId || '')}" placeholder="e.g. 8f3a1c9b2e...">
+      </div>
+      <div id="settingsError" class="vault-error"></div>
+      <button class="btn-vault-add" id="settingsSubmit" style="width:100%; padding:12px; margin-bottom:10px;">Update & reconnect</button>
+      <button class="btn-vault-secondary" id="settingsCancel" style="width:100%; padding:12px; margin-bottom:10px;">Cancel</button>
+      <button class="btn-vault-secondary btn-vault-danger" id="settingsSignOut" style="width:100%; padding:12px;">Sign out (clear saved token)</button>
+    </div>
+  `;
+  document.getElementById("settingsCancel").addEventListener("click", ()=>{ renderApp(); });
+  document.getElementById("settingsSignOut").addEventListener("click", ()=>{
+    if(DIRTY && !confirm("You have unsaved changes that will be lost. Sign out anyway?")) return;
+    clearConfig();
+    location.reload();
+  });
+  document.getElementById("settingsSubmit").addEventListener("click", async ()=>{
+    const token = document.getElementById("settingsToken").value.trim();
+    const gistId = document.getElementById("settingsGistId").value.trim();
+    if(!token){ document.getElementById("settingsError").textContent = "Enter a token to reconnect."; return; }
+    setConfig({ token, gistId: gistId || null });
+    if(DIRTY){
+      // keep in-memory edits, just retry saving with the new token
+      await saveToGist();
+      if(!DIRTY) renderApp();
+    } else {
+      await boot();
+    }
+  });
+}
+
 /* ---------- init ---------- */
 document.getElementById("vaultSaveBtn").addEventListener("click", saveToGist);
+document.getElementById("vaultSettingsBtn").addEventListener("click", renderSettingsPanel);
 window.addEventListener("beforeunload", (e)=>{ if(DIRTY){ e.preventDefault(); e.returnValue=""; } });
 boot();

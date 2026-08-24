@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Vault</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=Titillium+Web:ital,wght@0,400;0,600;0,700;0,900;1,700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/styles.css">
+<link rel="stylesheet" href="vault.css">
+</head>
+<body class="vault-body">
+
+<header class="vault-header">
+  <div class="container vault-header-inner">
+    <a href="../index.html" class="vault-back">&larr; Site</a>
+    <div class="vault-title"><span class="vault-title-mark"></span>Vault</div>
+    <div class="vault-header-actions">
+      <span id="vaultSaveStatus" class="vault-save-status"></span>
+      <button id="vaultSaveBtn" class="btn-vault-save" hidden>Save</button>
+    </div>
+  </div>
+</header>
+
+<main id="vaultApp" class="container vault-main"></main>
+
+<script src="vault-seed.js"></script>
+<script src="vault.js"></script>
+</body>
+</html>

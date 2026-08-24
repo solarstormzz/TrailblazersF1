@@ -266,20 +266,70 @@ function renderDriverForm(idParam){
   const isNew = idParam === "new";
   const driver = isNew ? {
     id: nextId(STATE.drivers), name:"", code:"", number:null, nationality:"", birthYear:null,
-    stillActive:false, canon:false, achievements:"", wins:0, podiums:0, poles:0, bio:"", history:[]
+    birthDate:"", birthPlace:"",
+    stillActive:false, canon:false, achievements:"", wins:0, podiums:0, poles:0, bio:"", history:[],
+    seriesStats:[]
   } : STATE.drivers.find(d=>d.id===Number(idParam));
 
   if(!driver){ location.hash = "drivers"; return; }
+  if(!driver.seriesStats) driver.seriesStats = [];
   const body = document.getElementById("vaultTabBody");
 
-  const historyRowHtml = (h, i) => `
-    <div class="vault-history-row" data-idx="${i}">
-      <input type="number" class="h-number" value="${h.number ?? ''}" placeholder="#">
-      <input type="number" class="h-year" value="${h.year ?? ''}" placeholder="Year">
-      <select class="h-series">${STATE.series.map(s=>`<option value="${s.id}" ${s.id===h.seriesId?'selected':''}>${esc(s.name)}</option>`).join("")}</select>
-      <select class="h-team">${STATE.teams.map(t=>`<option value="${t.id}" ${t.id===h.teamId?'selected':''}>${esc(t.name)}</option>`).join("")}</select>
-      <label class="vault-checkbox"><input type="checkbox" class="h-rookie" ${h.rookie?'checked':''}> Rookie</label>
-      <button type="button" class="btn-remove-row" data-remove="${i}">&times;</button>
+  function teamOptionsForSeries(seriesId, selectedTeamId){
+    seriesId = Number(seriesId);
+    selectedTeamId = selectedTeamId ? Number(selectedTeamId) : null;
+    let candidates = STATE.teams.filter(t=>t.seriesId===seriesId).sort((a,b)=>a.name.localeCompare(b.name));
+    // Keep the currently-selected team selectable even if it's since moved series,
+    // so switching things around doesn't silently blank a saved entry.
+    if(selectedTeamId && !candidates.some(t=>t.id===selectedTeamId)){
+      const forced = STATE.teams.find(t=>t.id===selectedTeamId);
+      if(forced) candidates = [forced, ...candidates];
+    }
+    return candidates.map(t=>`<option value="${t.id}" ${t.id===selectedTeamId?'selected':''}>${esc(t.name)}</option>`).join("");
+  }
+
+  // Only top-tier (first-listed series, e.g. Formula One) teams with a Junior Team
+  // name filled in are offered here \u2014 anything else is free text (h-academy-custom).
+  function academySelectOptions(selectedTeamId){
+    selectedTeamId = selectedTeamId ? Number(selectedTeamId) : null;
+    const topSeriesId = STATE.series[0]?.id;
+    const candidates = STATE.teams
+      .filter(t=>t.seriesId===topSeriesId && (t.juniorTeam||"").trim())
+      .sort((a,b)=>a.name.localeCompare(b.name));
+    return `<option value="">\u2014 none / custom \u2014</option>` +
+      candidates.map(t=>`<option value="${t.id}" ${t.id===selectedTeamId?'selected':''}>${esc(t.name)}</option>`).join("");
+  }
+
+  const historyCardHtml = (h, i) => {
+    const topSeriesId = STATE.series[0]?.id;
+    const isTopSeries = Number(h.seriesId) === topSeriesId;
+    return `
+    <div class="vault-history-entry" data-idx="${i}">
+      <div class="vault-history-row">
+        <input type="number" class="h-number" value="${h.number ?? ''}" placeholder="#">
+        <input type="number" class="h-year" value="${h.year ?? ''}" placeholder="Year">
+        <select class="h-series">${STATE.series.map(s=>`<option value="${s.id}" ${s.id===h.seriesId?'selected':''}>${esc(s.name)}</option>`).join("")}</select>
+        <select class="h-team">${teamOptionsForSeries(h.seriesId, h.teamId)}</select>
+        <input type="number" class="h-standing" value="${h.standing ?? ''}" placeholder="WDC pos.">
+        <label class="vault-checkbox"><input type="checkbox" class="h-rookie" ${h.rookie?'checked':''}> Rookie</label>
+        <button type="button" class="btn-remove-row" data-remove="${i}">&times;</button>
+      </div>
+      <div class="vault-history-subrow ${isTopSeries ? 'no-academy' : ''}">
+        <select class="h-academy">${academySelectOptions(isTopSeries ? null : h.academyTeamId)}</select>
+        <input type="text" class="h-academy-custom" value="${esc(isTopSeries ? '' : (h.academyCustom||''))}" placeholder="Or custom academy name">
+        <input type="text" class="h-notes" value="${esc(h.notes||'')}" placeholder="Notes, e.g. replaced Driver X from round 10">
+      </div>
+    </div>`;
+  };
+
+  const statsRowHtml = (s, i) => `
+    <div class="vault-stats-row" data-idx="${i}">
+      <select class="st-series">${STATE.series.map(sr=>`<option value="${sr.id}" ${sr.id===s.seriesId?'selected':''}>${esc(sr.name)}</option>`).join("")}</select>
+      <input type="number" class="st-wins" value="${s.wins ?? 0}" placeholder="Wins">
+      <input type="number" class="st-podiums" value="${s.podiums ?? 0}" placeholder="Podiums">
+      <input type="number" class="st-poles" value="${s.poles ?? 0}" placeholder="Poles">
+      <input type="text" class="st-achievements" value="${esc(s.achievements||'')}" placeholder="e.g. 2019 F2 champion">
+      <button type="button" class="btn-remove-row" data-remove-stats="${i}">&times;</button>
     </div>`;
 
   body.innerHTML = `
@@ -296,7 +346,16 @@ function renderDriverForm(idParam){
           <div class="vault-field"><label>Name</label><input type="text" name="name" value="${esc(driver.name)}" required></div>
           <div class="vault-field"><label>Code</label><input type="text" name="code" maxlength="3" value="${esc(driver.code)}"></div>
           <div class="vault-field"><label>Nationality</label><input type="text" name="nationality" value="${esc(driver.nationality)}"></div>
-          <div class="vault-field"><label>Birth year</label><input type="number" name="birthYear" value="${driver.birthYear ?? ''}"></div>
+          <div class="vault-field"><label>Birth place</label><input type="text" name="birthPlace" value="${esc(driver.birthPlace||'')}"></div>
+          <div class="vault-field">
+            <label>Birth date</label>
+            <input type="date" name="birthDate" id="birthDateInput" value="${esc(driver.birthDate||'')}">
+          </div>
+          <div class="vault-field">
+            <label>Birth year</label>
+            <input type="number" name="birthYear" id="birthYearInput" value="${driver.birthYear ?? ''}">
+            <div class="vault-hint" id="ageHint"></div>
+          </div>
           <div class="vault-field"><label>Achievements</label><input type="text" name="achievements" value="${esc(driver.achievements)}" placeholder="e.g. 3x WDC"></div>
           <div class="vault-field"><label>Wins</label><input type="number" name="wins" value="${driver.wins ?? 0}"></div>
           <div class="vault-field"><label>Podiums</label><input type="number" name="podiums" value="${driver.podiums ?? 0}"></div>
@@ -312,13 +371,28 @@ function renderDriverForm(idParam){
           <div class="vault-field span2"><label>Bio / longform notes</label><textarea name="bio">${esc(driver.bio)}</textarea></div>
           <div class="vault-field span2">
             <label>Season history (drives the grid view)</label>
+            <div class="vault-hint" style="margin-top:-4px; margin-bottom:8px;">Team choices are filtered to that season's series. A third driver replacing someone mid-season is just its own entry \u2014 use Notes to say so.</div>
             <div class="vault-history-labels">
-              <span>No.</span><span>Year</span><span>Series</span><span>Team</span><span>Rookie</span><span></span>
+              <span>No.</span><span>Year</span><span>Series</span><span>Team</span><span>Final pos.</span><span>Rookie</span><span></span>
+            </div>
+            <div class="vault-history-sublabels">
+              <span>Academy (grid team)</span><span>Custom academy</span><span>Notes</span>
             </div>
             <div class="vault-history" id="historyRows">
-              ${driver.history.map(historyRowHtml).join("")}
+              ${driver.history.map(historyCardHtml).join("")}
             </div>
             <button type="button" class="btn-add-row" id="addHistoryRow" style="margin-top:8px;">+ Add season</button>
+          </div>
+          <div class="vault-field span2">
+            <label>Stats by series (junior categories, etc.)</label>
+            <div class="vault-hint" style="margin-top:-4px; margin-bottom:8px;">The Wins/Podiums/Poles/Achievements fields above are the driver's headline stats. Use this to break stats down per series \u2014 useful for junior career results.</div>
+            <div class="vault-stats-labels">
+              <span>Series</span><span>Wins</span><span>Podiums</span><span>Poles</span><span>Achievements</span><span></span>
+            </div>
+            <div class="vault-stats" id="statsRows">
+              ${driver.seriesStats.map(statsRowHtml).join("")}
+            </div>
+            <button type="button" class="btn-add-row" id="addStatsRow" style="margin-top:8px;">+ Add series stats</button>
           </div>
         </div>
         <div style="margin-top:24px;">
@@ -327,6 +401,34 @@ function renderDriverForm(idParam){
       </form>
     </div>
   `;
+
+  function updateAgeHint(){
+    const bdVal = document.getElementById("birthDateInput").value;
+    const byVal = document.getElementById("birthYearInput").value;
+    const hint = document.getElementById("ageHint");
+    const now = new Date();
+    if(bdVal){
+      // Parse "YYYY-MM-DD" as a local date rather than via new Date(string), which
+      // parses as UTC and can be off by a day depending on the browser's timezone.
+      const parts = bdVal.split("-").map(Number);
+      if(parts.length===3 && !parts.some(isNaN)){
+        const bd = new Date(parts[0], parts[1]-1, parts[2]);
+        let age = now.getFullYear() - bd.getFullYear();
+        const m = now.getMonth() - bd.getMonth();
+        if(m < 0 || (m===0 && now.getDate() < bd.getDate())) age--;
+        hint.textContent = `Age: ${age}`;
+        return;
+      }
+    }
+    if(byVal){
+      hint.textContent = `Age: ~${now.getFullYear() - Number(byVal)} (from birth year only)`;
+      return;
+    }
+    hint.textContent = "";
+  }
+  document.getElementById("birthDateInput").addEventListener("input", updateAgeHint);
+  document.getElementById("birthYearInput").addEventListener("input", updateAgeHint);
+  updateAgeHint();
 
   document.getElementById("cancelDriverBtn").addEventListener("click", ()=>{ location.hash = "drivers"; });
   const delBtn = document.getElementById("deleteDriverBtn");
@@ -337,21 +439,61 @@ function renderDriverForm(idParam){
     location.hash = "drivers";
   });
 
-  function wireRemoveButtons(){
-    document.querySelectorAll("[data-remove]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        driver.history.splice(Number(btn.dataset.remove), 1);
-        document.getElementById("historyRows").innerHTML = driver.history.map(historyRowHtml).join("");
-        wireRemoveButtons();
+  function renderHistoryRows(){
+    document.getElementById("historyRows").innerHTML = driver.history.map(historyCardHtml).join("");
+    wireHistoryCards();
+  }
+  function wireHistoryCards(){
+    document.querySelectorAll("#historyRows .vault-history-entry").forEach(entry=>{
+      entry.querySelector("[data-remove]").addEventListener("click", (e)=>{
+        driver.history.splice(Number(e.currentTarget.dataset.remove), 1);
+        renderHistoryRows();
+      });
+      const seriesSel = entry.querySelector(".h-series");
+      const teamSel = entry.querySelector(".h-team");
+      const subrow = entry.querySelector(".vault-history-subrow");
+      const academySel = entry.querySelector(".h-academy");
+      const academyCustom = entry.querySelector(".h-academy-custom");
+      seriesSel.addEventListener("change", ()=>{
+        teamSel.innerHTML = teamOptionsForSeries(seriesSel.value, teamSel.value);
+        const topSeriesId = STATE.series[0]?.id;
+        const isTopSeries = Number(seriesSel.value) === topSeriesId;
+        subrow.classList.toggle("no-academy", isTopSeries);
+        if(isTopSeries){
+          academySel.innerHTML = academySelectOptions(null);
+          academyCustom.value = "";
+        }
       });
     });
   }
-  wireRemoveButtons();
+  renderHistoryRows();
 
   document.getElementById("addHistoryRow").addEventListener("click", ()=>{
-    driver.history.push({ number:null, year:new Date().getFullYear(), seriesId:STATE.series[0]?.id, teamId:STATE.teams[0]?.id, rookie:false });
-    document.getElementById("historyRows").innerHTML = driver.history.map(historyRowHtml).join("");
-    wireRemoveButtons();
+    // Careers are usually entered most-recent-first, so each new row counts one year
+    // further back than the earliest season already on file.
+    const existingYears = driver.history.map(h=>h.year).filter(y=>y!=null && !isNaN(y));
+    const year = existingYears.length ? Math.min(...existingYears) - 1 : new Date().getFullYear();
+    const seriesId = STATE.series[0]?.id ?? null;
+    const teamId = STATE.teams.find(t=>t.seriesId===seriesId)?.id ?? STATE.teams[0]?.id ?? null;
+    driver.history.push({ number:null, year, seriesId, teamId, standing:null, academyTeamId:null, academyCustom:"", notes:"", rookie:false });
+    renderHistoryRows();
+  });
+
+  function wireRemoveStatsButtons(){
+    document.querySelectorAll("[data-remove-stats]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        driver.seriesStats.splice(Number(btn.dataset.removeStats), 1);
+        document.getElementById("statsRows").innerHTML = driver.seriesStats.map(statsRowHtml).join("");
+        wireRemoveStatsButtons();
+      });
+    });
+  }
+  wireRemoveStatsButtons();
+
+  document.getElementById("addStatsRow").addEventListener("click", ()=>{
+    driver.seriesStats.push({ seriesId: STATE.series[0]?.id, wins:0, podiums:0, poles:0, achievements:"" });
+    document.getElementById("statsRows").innerHTML = driver.seriesStats.map(statsRowHtml).join("");
+    wireRemoveStatsButtons();
   });
 
   document.getElementById("driverForm").addEventListener("submit", (e)=>{
@@ -364,6 +506,8 @@ function renderDriverForm(idParam){
       number: fd.get("number") ? Number(fd.get("number")) : null,
       nationality: fd.get("nationality").trim(),
       birthYear: fd.get("birthYear") ? Number(fd.get("birthYear")) : null,
+      birthDate: fd.get("birthDate") || "",
+      birthPlace: fd.get("birthPlace").trim(),
       achievements: fd.get("achievements").trim(),
       wins: Number(fd.get("wins")) || 0,
       podiums: Number(fd.get("podiums")) || 0,
@@ -371,13 +515,24 @@ function renderDriverForm(idParam){
       stillActive: fd.get("stillActive") === "on",
       canon: fd.get("canon") === "on",
       bio: fd.get("bio"),
-      history: [...document.querySelectorAll("#historyRows .vault-history-row")].map(row=>({
-        number: row.querySelector(".h-number").value ? Number(row.querySelector(".h-number").value) : null,
-        year: Number(row.querySelector(".h-year").value) || null,
-        seriesId: Number(row.querySelector(".h-series").value),
-        teamId: Number(row.querySelector(".h-team").value),
-        rookie: row.querySelector(".h-rookie").checked
-      })).filter(h=>h.year)
+      history: [...document.querySelectorAll("#historyRows .vault-history-entry")].map(entry=>({
+        number: entry.querySelector(".h-number").value ? Number(entry.querySelector(".h-number").value) : null,
+        year: Number(entry.querySelector(".h-year").value) || null,
+        seriesId: Number(entry.querySelector(".h-series").value),
+        teamId: Number(entry.querySelector(".h-team").value),
+        standing: entry.querySelector(".h-standing").value ? Number(entry.querySelector(".h-standing").value) : null,
+        academyTeamId: entry.querySelector(".h-academy").value ? Number(entry.querySelector(".h-academy").value) : null,
+        academyCustom: entry.querySelector(".h-academy-custom").value.trim(),
+        notes: entry.querySelector(".h-notes").value.trim(),
+        rookie: entry.querySelector(".h-rookie").checked
+      })).filter(h=>h.year),
+      seriesStats: [...document.querySelectorAll("#statsRows .vault-stats-row")].map(row=>({
+        seriesId: Number(row.querySelector(".st-series").value),
+        wins: Number(row.querySelector(".st-wins").value) || 0,
+        podiums: Number(row.querySelector(".st-podiums").value) || 0,
+        poles: Number(row.querySelector(".st-poles").value) || 0,
+        achievements: row.querySelector(".st-achievements").value.trim()
+      }))
     };
     updated.number = latestNumber(updated.history);
     if(isNew){ STATE.drivers.push(updated); } else {
@@ -435,7 +590,7 @@ function renderTeamForm(idParam){
   const team = isNew ? {
     id: nextId(STATE.teams), seriesId: STATE.series[0]?.id, name:"", fullName:"", color:"#888888",
     base:"", principal:"", chassis:"", powerUnit:"", firstEntry:null, lastEntry:null,
-    owner:"", wdc:0, wcc:0, canon:false, description:""
+    owner:"", wdc:0, wcc:0, canon:false, description:"", juniorTeam:""
   } : STATE.teams.find(t=>t.id===Number(idParam));
 
   if(!team){ location.hash = "teams"; return; }
@@ -466,6 +621,11 @@ function renderTeamForm(idParam){
           <div class="vault-field"><label>Last entry (blank = still active)</label><input type="number" name="lastEntry" value="${team.lastEntry ?? ''}"></div>
           <div class="vault-field"><label>WDC titles</label><input type="number" name="wdc" value="${team.wdc ?? 0}"></div>
           <div class="vault-field"><label>WCC titles</label><input type="number" name="wcc" value="${team.wcc ?? 0}"></div>
+          <div class="vault-field span2">
+            <label>Junior team / academy name</label>
+            <input type="text" name="juniorTeam" value="${esc(team.juniorTeam||'')}" placeholder="e.g. Red Bull Junior Team">
+            <div class="vault-hint">Only meaningful for top-tier (e.g. Formula One) teams. Fill this in and this team becomes selectable as a junior/academy affiliation on drivers elsewhere \u2014 leave it blank and it won't show up as an option.</div>
+          </div>
           <div class="vault-field span2">
             <label>Canon status</label>
             <div class="vault-checkbox"><input type="checkbox" name="canon" ${team.canon?'checked':''}> Made it into the public site (canon)</div>
@@ -504,6 +664,7 @@ function renderTeamForm(idParam){
       lastEntry: fd.get("lastEntry") ? Number(fd.get("lastEntry")) : null,
       wdc: Number(fd.get("wdc")) || 0,
       wcc: Number(fd.get("wcc")) || 0,
+      juniorTeam: fd.get("juniorTeam").trim(),
       canon: fd.get("canon") === "on",
       description: fd.get("description")
     };
@@ -599,22 +760,36 @@ function renderGridTab(){
       return;
     }
 
-    board.innerHTML = teamsInSeries.map(team=>{
-      const lineup = STATE.drivers.filter(d=>
+    // Teams with no drivers on record for this season/series are left off the
+    // grid entirely (rather than showing as an empty slot) \u2014 this also
+    // naturally hides teams that aren't active yet or aren't active anymore.
+    const cards = teamsInSeries.map(team=>{
+      const lineupDrivers = STATE.drivers.filter(d=>
         (d.history||[]).some(h=>h.year===year && h.seriesId===seriesId && h.teamId===team.id)
         && (showNoncanon || d.canon)
-      ).map(d=>{
+      );
+      if(!lineupDrivers.length) return null;
+      const lineup = lineupDrivers.map(d=>{
         const h = d.history.find(h=>h.year===year && h.seriesId===seriesId && h.teamId===team.id);
+        const academyTeam = h.academyTeamId ? STATE.teams.find(t=>t.id===h.academyTeamId) : null;
+        const academyLabel = academyTeam ? (academyTeam.juniorTeam || academyTeam.name) : (h.academyCustom || null);
+        const academyColor = academyTeam ? (academyTeam.color || '#666') : '#666';
         return `<div class="grid-driver ${d.canon?'':'grid-noncanon'}">
-          ${h.number ? `<span class="rookie-tag" style="color:var(--gray-light); border-color:var(--line);">#${esc(h.number)}</span>` : ""}
-          ${esc(d.name)} ${h.rookie ? `<span class="rookie-tag">ROOKIE</span>` : ""}
+          <div class="grid-driver-main">
+            ${h.number ? `<span class="rookie-tag" style="color:var(--gray-light); border-color:var(--line);">#${esc(h.number)}</span>` : ""}
+            ${esc(d.name)} ${h.rookie ? `<span class="rookie-tag">ROOKIE</span>` : ""}
+          </div>
+          ${academyLabel ? `<div class="academy-tag" style="border-color:${esc(academyColor)}; color:${esc(academyColor)}">Academy: ${esc(academyLabel)}</div>` : ""}
+          ${h.notes ? `<div class="grid-driver-notes">${esc(h.notes)}</div>` : ""}
         </div>`;
-      }).join("") || `<div class="grid-empty-slot">No driver on record</div>`;
+      }).join("");
       return `<div class="grid-team" style="border-left-color:${esc(team.color||'#666')}">
         <div class="tname">${esc(team.name)}</div>
         <div class="tdrivers">${lineup}</div>
       </div>`;
-    }).join("");
+    }).filter(Boolean);
+
+    board.innerHTML = cards.length ? cards.join("") : `<div class="vault-empty">No teams with drivers on record for this season.</div>`;
   }
   seriesSel.addEventListener("change", draw);
   yearSel.addEventListener("change", draw);

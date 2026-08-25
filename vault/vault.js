@@ -15,6 +15,14 @@ let SAVING = false;
 // navigating away to a detail view and back preserves whatever the user had set.
 let driverFilters = { q: "", seriesId: "", year: "" };
 let teamFilters = { q: "", seriesId: "" };
+// Grid/Results filters use null (rather than "") to mean "not chosen yet, use
+// the tab's computed default" \u2014 unlike the driver/team toolbars, these two
+// selects have no blank/"all" option of their own.
+let gridFilters = { seriesId: null, year: null, showNoncanon: true };
+let resultsFilters = { seriesId: null, year: null, showNoncanon: true };
+// Which list hash a driver-detail view was opened from, so "Back" (and delete)
+// return there instead of always landing on the Drivers tab.
+let driverReturnHash = "drivers";
 
 /* ---------- helpers ---------- */
 function esc(s){
@@ -44,6 +52,22 @@ function currentSeriesIds(history){
   if(!hist.length) return [];
   const maxYear = Math.max(...hist.map(h=>h.year));
   return [...new Set(hist.filter(h=>h.year===maxYear).map(h=>h.seriesId))];
+}
+// Approximate age during a given season, using a mid-year (Jul 1) reference
+// point so it reflects "age for that season" rather than age-on-Jan-1.
+// Falls back to the coarser birthYear field when no exact birth date is on file.
+function ageAtYear(driver, year){
+  if(driver.birthDate){
+    const parts = driver.birthDate.split("-").map(Number);
+    if(parts.length===3 && !parts.some(isNaN)){
+      const [by, bm, bd] = parts;
+      let age = year - by;
+      if(bm > 7 || (bm===7 && bd>1)) age--;
+      return age;
+    }
+  }
+  if(driver.birthYear != null && driver.birthYear !== "") return year - Number(driver.birthYear);
+  return null;
 }
 function getConfig(){ try{ return JSON.parse(localStorage.getItem(CONFIG_KEY) || "null"); }catch(e){ return null; } }
 function setConfig(cfg){ localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg)); }
@@ -212,6 +236,11 @@ function renderApp(){
   const hash = location.hash.replace(/^#/,"") || "drivers";
   const tab = hash.split("-")[0].split("/")[0];
 
+  // Remember the last list view (Drivers / Grid / Results) so a driver detail
+  // opened from any of them returns to that same view \u2014 with its filters \u2014
+  // instead of always bouncing back to the Drivers tab.
+  if(hash==="drivers" || hash==="grid" || hash==="results"){ driverReturnHash = hash; }
+
   app.innerHTML = `
     <div class="vault-tabs">
       <button class="vault-tab ${tab==='drivers'?'active':''}" data-tab="drivers">Drivers</button>
@@ -272,25 +301,52 @@ function renderDriversList(){
     const q = driverFilters.q.trim().toLowerCase();
     const sid = driverFilters.seriesId ? Number(driverFilters.seriesId) : null;
     const yr = driverFilters.year ? Number(driverFilters.year) : null;
+    // When both a series and a year are picked, they need to match the SAME
+    // history entry \u2014 e.g. F2 + 2024 should only match someone who actually
+    // raced F2 in 2024, not an F2 driver from some other year who happens to
+    // have raced anything at all in 2024.
     let list = STATE.drivers.filter(d=>{
       const matchesQ = !q || d.name.toLowerCase().includes(q);
-      const seriesIds = new Set((d.history||[]).map(h=>h.seriesId));
-      const matchesSeries = !sid || seriesIds.has(sid);
-      const matchesYear = !yr || (d.history||[]).some(h=>h.year===yr);
-      return matchesQ && matchesSeries && matchesYear;
+      const matchesCombo = (!sid && !yr) || (d.history||[]).some(h =>
+        (!sid || h.seriesId===sid) && (!yr || h.year===yr));
+      return matchesQ && matchesCombo;
     }).sort((a,b)=>a.name.localeCompare(b.name));
     const wrap = document.getElementById("driversListBody");
     if(!list.length){ wrap.innerHTML = `<div class="vault-empty">No drivers match.</div>`; return; }
     wrap.innerHTML = list.map(d=>{
-      // Current series only \u2014 i.e. from the driver's most recent season on file,
-      // not every series they've ever raced in.
-      const seriesIds = currentSeriesIds(d.history);
-      const seriesNames = seriesIds.map(currentSeriesName).join(", ") || "Unassigned";
       const num = latestNumber(d.history);
+      let metaText, academyLabel = null, academyColor = "#666";
+      if(sid || yr){
+        // Show context for the selected year/series specifically, rather than
+        // the driver's current (most recent) season.
+        const h = (d.history||[]).find(hh => (!sid || hh.seriesId===sid) && (!yr || hh.year===yr));
+        const team = h ? STATE.teams.find(t=>t.id===h.teamId) : null;
+        const parts = [];
+        if(team) parts.push(team.name);
+        if(!sid && h) parts.push(currentSeriesName(h.seriesId));
+        if(yr){ const age = ageAtYear(d, yr); if(age != null) parts.push(`Age ${age}`); }
+        metaText = parts.join(" \u00b7 ") || "No record for this selection";
+        if(h){
+          if(h.academyTeamId){
+            const at = STATE.teams.find(t=>t.id===h.academyTeamId);
+            academyLabel = at ? (at.juniorTeam || at.name) : null;
+            academyColor = at ? (at.color || "#666") : "#666";
+          } else if(h.academyCustom){
+            academyLabel = h.academyCustom;
+          }
+        }
+      } else {
+        // No filter applied \u2014 fall back to current series, i.e. from the
+        // driver's most recent season on file.
+        const seriesIds = currentSeriesIds(d.history);
+        metaText = seriesIds.map(currentSeriesName).join(", ") || "Unassigned";
+      }
       return `<div class="vault-row" data-id="${d.id}">
         <span class="rnumber">${num ? '#'+esc(num) : ''}</span>
         <span class="rname">${esc(d.name)}</span>
-        <span class="rmeta">${esc(seriesNames)}</span>
+        <span class="rmeta">${esc(metaText)}</span>
+        ${d.nationality ? `<span class="rmeta">${esc(d.nationality)}</span>` : ""}
+        ${academyLabel ? `<span class="academy-tag" style="border-color:${esc(academyColor)}; color:${esc(academyColor)}">Academy: ${esc(academyLabel)}</span>` : ""}
         <span class="badge ${d.canon?'badge-canon':'badge-noncanon'}">${d.canon?'canon':'background'}</span>
       </div>`;
     }).join("");
@@ -314,7 +370,7 @@ function renderDriverForm(idParam){
     seriesStats:[]
   } : STATE.drivers.find(d=>d.id===Number(idParam));
 
-  if(!driver){ location.hash = "drivers"; return; }
+  if(!driver){ location.hash = driverReturnHash; return; }
   if(!driver.seriesStats) driver.seriesStats = [];
   const body = document.getElementById("vaultTabBody");
 
@@ -473,13 +529,13 @@ function renderDriverForm(idParam){
   document.getElementById("birthYearInput").addEventListener("input", updateAgeHint);
   updateAgeHint();
 
-  document.getElementById("cancelDriverBtn").addEventListener("click", ()=>{ location.hash = "drivers"; });
+  document.getElementById("cancelDriverBtn").addEventListener("click", ()=>{ location.hash = driverReturnHash; });
   const delBtn = document.getElementById("deleteDriverBtn");
   if(delBtn) delBtn.addEventListener("click", ()=>{
     if(!confirm(`Delete ${driver.name}? This can't be undone until you Save.`)) return;
     STATE.drivers = STATE.drivers.filter(d=>d.id!==driver.id);
     markDirty();
-    location.hash = "drivers";
+    location.hash = driverReturnHash;
   });
 
   function renderHistoryRows(){
@@ -820,13 +876,22 @@ function renderGridTab(){
   `;
   const seriesSel = document.getElementById("gridSeries");
   const yearSel = document.getElementById("gridYear");
-  seriesSel.value = defaultSeries;
-  yearSel.value = defaultYear;
+  const noncanonCb = document.getElementById("gridShowNoncanon");
+  // Restore whatever was previously selected, falling back to the computed
+  // default only the first time this tab is opened.
+  seriesSel.value = gridFilters.seriesId != null ? gridFilters.seriesId : defaultSeries;
+  yearSel.value = gridFilters.year != null ? gridFilters.year : defaultYear;
+  noncanonCb.checked = gridFilters.showNoncanon;
 
   function draw(){
-    const seriesId = Number(seriesSel.value);
-    const year = Number(yearSel.value);
-    const showNoncanon = document.getElementById("gridShowNoncanon").checked;
+    gridFilters = {
+      seriesId: Number(seriesSel.value),
+      year: Number(yearSel.value),
+      showNoncanon: noncanonCb.checked
+    };
+    const seriesId = gridFilters.seriesId;
+    const year = gridFilters.year;
+    const showNoncanon = gridFilters.showNoncanon;
     const teamsInSeries = STATE.teams.filter(t=>teamSeriesIds(t).includes(seriesId));
     const board = document.getElementById("gridBoard");
     const isTopSeries = seriesId === STATE.series[0]?.id;
@@ -873,7 +938,7 @@ function renderGridTab(){
   }
   seriesSel.addEventListener("change", draw);
   yearSel.addEventListener("change", draw);
-  document.getElementById("gridShowNoncanon").addEventListener("change", draw);
+  noncanonCb.addEventListener("change", draw);
   draw();
 }
 
@@ -895,13 +960,22 @@ function renderResultsTab(){
   `;
   const seriesSel = document.getElementById("resultsSeries");
   const yearSel = document.getElementById("resultsYear");
-  seriesSel.value = defaultSeries;
-  yearSel.value = defaultYear;
+  const noncanonCb = document.getElementById("resultsShowNoncanon");
+  // Restore whatever was previously selected, falling back to the computed
+  // default only the first time this tab is opened.
+  seriesSel.value = resultsFilters.seriesId != null ? resultsFilters.seriesId : defaultSeries;
+  yearSel.value = resultsFilters.year != null ? resultsFilters.year : defaultYear;
+  noncanonCb.checked = resultsFilters.showNoncanon;
 
   function draw(){
-    const seriesId = Number(seriesSel.value);
-    const year = Number(yearSel.value);
-    const showNoncanon = document.getElementById("resultsShowNoncanon").checked;
+    resultsFilters = {
+      seriesId: Number(seriesSel.value),
+      year: Number(yearSel.value),
+      showNoncanon: noncanonCb.checked
+    };
+    const seriesId = resultsFilters.seriesId;
+    const year = resultsFilters.year;
+    const showNoncanon = resultsFilters.showNoncanon;
     const board = document.getElementById("resultsBoard");
 
     // One row per driver with a history entry in this series/year.
@@ -944,7 +1018,7 @@ function renderResultsTab(){
   }
   seriesSel.addEventListener("change", draw);
   yearSel.addEventListener("change", draw);
-  document.getElementById("resultsShowNoncanon").addEventListener("change", draw);
+  noncanonCb.addEventListener("change", draw);
   draw();
 }
 

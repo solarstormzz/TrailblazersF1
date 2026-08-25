@@ -16,6 +16,18 @@ function esc(s){
   return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 function nextId(arr){ return arr.length ? Math.max(...arr.map(x=>x.id)) + 1 : 1; }
+function teamSeriesIds(t){ return t.seriesIds || (t.seriesId != null ? [t.seriesId] : []); }
+function migrateState(data){
+  data.teams = (data.teams||[]).map(t=>{
+    if(!t.seriesIds){
+      t.seriesIds = t.seriesId != null ? [t.seriesId] : [];
+      delete t.seriesId;
+    }
+    if(t.resultsName === undefined) t.resultsName = "";
+    return t;
+  });
+  return data;
+}
 function latestNumber(history){
   const withNum = (history||[]).filter(h=>h.number !== null && h.number !== undefined && h.number !== "").sort((a,b)=>b.year-a.year);
   return withNum.length ? withNum[0].number : null;
@@ -141,17 +153,17 @@ function renderSeedPrompt(){
     </div>
   `;
   document.getElementById("seedBtn").addEventListener("click", ()=>{
-    STATE = JSON.parse(JSON.stringify(VAULT_SEED_DATA));
+    STATE = migrateState(JSON.parse(JSON.stringify(VAULT_SEED_DATA)));
     markDirty();
     saveToGist().then(renderApp);
   });
   document.getElementById("emptyBtn").addEventListener("click", ()=>{
-    STATE = { meta:{}, series:[
+    STATE = migrateState({ meta:{}, series:[
       {id:1,name:"Formula One",shortName:"F1",color:"#E10600"},
       {id:2,name:"Series 2",shortName:"S2",color:"#3E7CB1"},
       {id:3,name:"Series 3",shortName:"S3",color:"#7C4DFF"},
       {id:4,name:"Series 4",shortName:"S4",color:"#E8A33D"}
-    ], teams:[], drivers:[] };
+    ], teams:[], drivers:[] });
     markDirty();
     saveToGist().then(renderApp);
   });
@@ -170,7 +182,7 @@ async function boot(){
       renderSeedPrompt();
       return;
     }
-    STATE = data;
+    STATE = migrateState(data);
     renderApp();
   } catch(err){
     renderSetup("Couldn't load that Gist \u2014 " + err.message);
@@ -278,7 +290,7 @@ function renderDriverForm(idParam){
   function teamOptionsForSeries(seriesId, selectedTeamId){
     seriesId = Number(seriesId);
     selectedTeamId = selectedTeamId ? Number(selectedTeamId) : null;
-    let candidates = STATE.teams.filter(t=>t.seriesId===seriesId).sort((a,b)=>a.name.localeCompare(b.name));
+    let candidates = STATE.teams.filter(t=>teamSeriesIds(t).includes(seriesId)).sort((a,b)=>a.name.localeCompare(b.name));
     // Keep the currently-selected team selectable even if it's since moved series,
     // so switching things around doesn't silently blank a saved entry.
     if(selectedTeamId && !candidates.some(t=>t.id===selectedTeamId)){
@@ -294,7 +306,7 @@ function renderDriverForm(idParam){
     selectedTeamId = selectedTeamId ? Number(selectedTeamId) : null;
     const topSeriesId = STATE.series[0]?.id;
     const candidates = STATE.teams
-      .filter(t=>t.seriesId===topSeriesId && (t.juniorTeam||"").trim())
+      .filter(t=>teamSeriesIds(t).includes(topSeriesId) && (t.juniorTeam||"").trim())
       .sort((a,b)=>a.name.localeCompare(b.name));
     return `<option value="">\u2014 none / custom \u2014</option>` +
       candidates.map(t=>`<option value="${t.id}" ${t.id===selectedTeamId?'selected':''}>${esc(t.name)}</option>`).join("");
@@ -474,7 +486,7 @@ function renderDriverForm(idParam){
     const existingYears = driver.history.map(h=>h.year).filter(y=>y!=null && !isNaN(y));
     const year = existingYears.length ? Math.min(...existingYears) - 1 : new Date().getFullYear();
     const seriesId = STATE.series[0]?.id ?? null;
-    const teamId = STATE.teams.find(t=>t.seriesId===seriesId)?.id ?? STATE.teams[0]?.id ?? null;
+    const teamId = STATE.teams.find(t=>teamSeriesIds(t).includes(seriesId))?.id ?? STATE.teams[0]?.id ?? null;
     driver.history.push({ number:null, year, seriesId, teamId, standing:null, academyTeamId:null, academyCustom:"", notes:"", rookie:false });
     renderHistoryRows();
   });
@@ -564,17 +576,19 @@ function renderTeamsList(){
   const draw = ()=>{
     const q = search.value.trim().toLowerCase();
     const sid = seriesFilter.value ? Number(seriesFilter.value) : null;
-    let list = STATE.teams.filter(t=>(!q || t.name.toLowerCase().includes(q)) && (!sid || t.seriesId===sid))
+    let list = STATE.teams.filter(t=>(!q || t.name.toLowerCase().includes(q)) && (!sid || teamSeriesIds(t).includes(sid)))
       .sort((a,b)=>a.name.localeCompare(b.name));
     const wrap = document.getElementById("teamsListBody");
     if(!list.length){ wrap.innerHTML = `<div class="vault-empty">No teams match.</div>`; return; }
-    wrap.innerHTML = list.map(t=>`
-      <div class="vault-row" data-id="${t.id}">
+    wrap.innerHTML = list.map(t=>{
+      const seriesNames = teamSeriesIds(t).map(currentSeriesName).join(", ") || "Unassigned";
+      return `<div class="vault-row" data-id="${t.id}">
         <span class="swatch" style="background:${esc(t.color||'#666')}"></span>
         <span class="rname">${esc(t.name)}</span>
-        <span class="rmeta">${esc(currentSeriesName(t.seriesId))}</span>
+        <span class="rmeta">${esc(seriesNames)}${t.resultsName ? ' \u00b7 ' + esc(t.resultsName) : ''}</span>
         <span class="badge ${t.canon?'badge-canon':'badge-noncanon'}">${t.canon?'canon':'background'}</span>
-      </div>`).join("");
+      </div>`;
+    }).join("");
     wrap.querySelectorAll(".vault-row").forEach(row=>{
       row.addEventListener("click", ()=>{ location.hash = "team-" + row.dataset.id; });
     });
@@ -588,7 +602,7 @@ function renderTeamsList(){
 function renderTeamForm(idParam){
   const isNew = idParam === "new";
   const team = isNew ? {
-    id: nextId(STATE.teams), seriesId: STATE.series[0]?.id, name:"", fullName:"", color:"#888888",
+    id: nextId(STATE.teams), seriesIds: [STATE.series[0]?.id].filter(x=>x!=null), name:"", fullName:"", resultsName:"", color:"#888888",
     base:"", principal:"", chassis:"", powerUnit:"", firstEntry:null, lastEntry:null,
     owner:"", wdc:0, wcc:0, canon:false, description:"", juniorTeam:""
   } : STATE.teams.find(t=>t.id===Number(idParam));
@@ -608,10 +622,19 @@ function renderTeamForm(idParam){
         <div class="vault-grid-form">
           <div class="vault-field"><label>Name</label><input type="text" name="name" value="${esc(team.name)}" required></div>
           <div class="vault-field"><label>Full name</label><input type="text" name="fullName" value="${esc(team.fullName)}"></div>
-          <div class="vault-field"><label>Series</label>
-            <select name="seriesId">${STATE.series.map(s=>`<option value="${s.id}" ${s.id===team.seriesId?'selected':''}>${esc(s.name)}</option>`).join("")}</select>
+          <div class="vault-field span2">
+            <label>Series</label>
+            <div class="vault-checkbox-group">
+              ${STATE.series.map(s=>`<label class="vault-checkbox"><input type="checkbox" class="team-series-cb" value="${s.id}" ${teamSeriesIds(team).includes(s.id)?'checked':''}> ${esc(s.name)}</label>`).join("")}
+            </div>
+            <div class="vault-hint">Junior/feeder teams are often the same outfit across multiple series \u2014 check all that apply.</div>
           </div>
           <div class="vault-field"><label>Color</label><input type="color" name="color" value="${team.color||'#888888'}"></div>
+          <div class="vault-field">
+            <label>Manufacturer name (ResultsName)</label>
+            <input type="text" name="resultsName" value="${esc(team.resultsName||'')}" placeholder="e.g. Kinghorn Osella">
+            <div class="vault-hint">Formula One only \u2014 short team name + engine manufacturer, as it'd appear in a results table. Leave blank if this team isn't in F1.</div>
+          </div>
           <div class="vault-field"><label>Base</label><input type="text" name="base" value="${esc(team.base)}"></div>
           <div class="vault-field"><label>Principal</label><input type="text" name="principal" value="${esc(team.principal)}"></div>
           <div class="vault-field"><label>Owner</label><input type="text" name="owner" value="${esc(team.owner)}"></div>
@@ -649,11 +672,14 @@ function renderTeamForm(idParam){
   document.getElementById("teamForm").addEventListener("submit", (e)=>{
     e.preventDefault();
     const fd = new FormData(e.target);
+    const seriesIds = [...document.querySelectorAll(".team-series-cb:checked")].map(cb=>Number(cb.value));
+    if(!seriesIds.length){ alert("Select at least one series for this team."); return; }
     const updated = {
       ...team,
       name: fd.get("name").trim(),
       fullName: fd.get("fullName").trim(),
-      seriesId: Number(fd.get("seriesId")),
+      resultsName: fd.get("resultsName").trim(),
+      seriesIds,
       color: fd.get("color"),
       base: fd.get("base").trim(),
       principal: fd.get("principal").trim(),
@@ -668,6 +694,7 @@ function renderTeamForm(idParam){
       canon: fd.get("canon") === "on",
       description: fd.get("description")
     };
+    delete updated.seriesId;
     if(isNew){ STATE.teams.push(updated); } else {
       const idx = STATE.teams.findIndex(t=>t.id===team.id);
       STATE.teams[idx] = updated;
@@ -752,8 +779,9 @@ function renderGridTab(){
     const seriesId = Number(seriesSel.value);
     const year = Number(yearSel.value);
     const showNoncanon = document.getElementById("gridShowNoncanon").checked;
-    const teamsInSeries = STATE.teams.filter(t=>t.seriesId===seriesId);
+    const teamsInSeries = STATE.teams.filter(t=>teamSeriesIds(t).includes(seriesId));
     const board = document.getElementById("gridBoard");
+    const isTopSeries = seriesId === STATE.series[0]?.id;
 
     if(!teamsInSeries.length){
       board.innerHTML = `<div class="vault-empty">No teams in this series yet.</div>`;
@@ -785,6 +813,7 @@ function renderGridTab(){
       }).join("");
       return `<div class="grid-team" style="border-left-color:${esc(team.color||'#666')}">
         <div class="tname">${esc(team.name)}</div>
+        ${(isTopSeries && team.resultsName) ? `<div class="tmanufacturer">${esc(team.resultsName)}</div>` : ""}
         <div class="tdrivers">${lineup}</div>
       </div>`;
     }).filter(Boolean);

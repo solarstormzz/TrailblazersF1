@@ -96,6 +96,7 @@
 .vault-field textarea{ min-height:160px; resize:vertical; font-family:var(--font-body); line-height:1.5; }
 .vault-checkbox{ display:flex; align-items:center; gap:8px; }
 .vault-checkbox input{ width:auto; }
+.vault-checkbox-group{ display:flex; flex-wrap:wrap; gap:8px 20px; padding:4px 2px; }
 
 /* --- history editor (table-style: main row + a slim sub-row for academy/notes) --- */
 .vault-history-labels{ display:grid; grid-template-columns:70px 90px 1fr 1fr 90px 90px 32px; gap:8px; margin-top:10px;
@@ -141,6 +142,7 @@
 .grid-board{ display:grid; grid-template-columns:repeat(auto-fill, minmax(220px,1fr)); gap:14px; }
 .grid-team{ background:var(--panel); border:1px solid var(--line); border-left:5px solid var(--line); border-radius:2px; padding:16px; }
 .grid-team .tname{ font-family:var(--font-display); font-weight:800; font-size:15px; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px; }
+.grid-team .tmanufacturer{ font-family:var(--font-mono); font-size:11px; color:var(--gray); text-transform:uppercase; letter-spacing:0.5px; margin:-6px 0 10px; }
 .grid-team .tdrivers{ display:grid; gap:10px; }
 .grid-driver{ font-family:var(--font-body); font-size:14px; color:var(--gray-light); }
 .grid-driver-main{ display:flex; align-items:center; gap:8px; }

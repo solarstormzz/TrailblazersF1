@@ -205,6 +205,7 @@ function renderApp(){
       <button class="vault-tab ${tab==='teams'?'active':''}" data-tab="teams">Teams</button>
       <button class="vault-tab ${tab==='series'?'active':''}" data-tab="series">Series</button>
       <button class="vault-tab ${tab==='grid'?'active':''}" data-tab="grid">Season Grid</button>
+      <button class="vault-tab ${tab==='results'?'active':''}" data-tab="results">Season Results</button>
     </div>
     <div id="vaultTabBody"></div>
   `;
@@ -218,6 +219,7 @@ function renderApp(){
   else if(hash==="teams") renderTeamsList();
   else if(hash==="series") renderSeriesTab();
   else if(hash==="grid") renderGridTab();
+  else if(hash==="results") renderResultsTab();
   else renderDriversList();
 
   document.getElementById("vaultSaveBtn").hidden = !DIRTY;
@@ -764,8 +766,8 @@ function renderGridTab(){
 
   body.innerHTML = `
     <div class="vault-grid-controls">
-      <select id="gridSeries">${STATE.series.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select>
       <select id="gridYear">${years.length ? years.map(y=>`<option value="${y}">${y}</option>`).join("") : `<option value="${defaultYear}">${defaultYear}</option>`}</select>
+      <select id="gridSeries">${STATE.series.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select>
       <label class="vault-checkbox"><input type="checkbox" id="gridShowNoncanon" checked> Include background (non-canon)</label>
     </div>
     <div class="grid-board" id="gridBoard"></div>
@@ -823,6 +825,76 @@ function renderGridTab(){
   seriesSel.addEventListener("change", draw);
   yearSel.addEventListener("change", draw);
   document.getElementById("gridShowNoncanon").addEventListener("change", draw);
+  draw();
+}
+
+/* ---------- SEASON RESULTS tab ---------- */
+function renderResultsTab(){
+  const body = document.getElementById("vaultTabBody");
+  const years = [...new Set(STATE.drivers.flatMap(d=>(d.history||[]).map(h=>h.year)))].sort((a,b)=>a-b);
+  const defaultSeries = STATE.series[0]?.id;
+  const defaultYear = years[years.length-1] || new Date().getFullYear();
+
+  body.innerHTML = `
+    <div class="vault-grid-controls">
+      <select id="resultsYear">${years.length ? years.map(y=>`<option value="${y}">${y}</option>`).join("") : `<option value="${defaultYear}">${defaultYear}</option>`}</select>
+      <select id="resultsSeries">${STATE.series.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select>
+      <label class="vault-checkbox"><input type="checkbox" id="resultsShowNoncanon" checked> Include background (non-canon)</label>
+    </div>
+    <div class="vault-list" id="resultsBoard"></div>
+  `;
+  const yearSel = document.getElementById("resultsYear");
+  const seriesSel = document.getElementById("resultsSeries");
+  yearSel.value = defaultYear;
+  seriesSel.value = defaultSeries;
+
+  // Sort by final standing (ascending) when present; entries with no standing
+  // fall to the bottom and are sorted alphabetically among themselves. If
+  // nothing in the season has a standing at all, this collapses to a plain
+  // alphabetical list.
+  function draw(){
+    const seriesId = Number(seriesSel.value);
+    const year = Number(yearSel.value);
+    const showNoncanon = document.getElementById("resultsShowNoncanon").checked;
+    const board = document.getElementById("resultsBoard");
+
+    const entries = [];
+    STATE.drivers.forEach(d=>{
+      if(!showNoncanon && !d.canon) return;
+      const h = (d.history||[]).find(h=>h.year===year && h.seriesId===seriesId);
+      if(h) entries.push({ driver:d, h });
+    });
+
+    if(!entries.length){
+      board.innerHTML = `<div class="vault-empty">No results on record for this season.</div>`;
+      return;
+    }
+
+    entries.sort((a,b)=>{
+      const ap = a.h.standing, bp = b.h.standing;
+      if(ap != null && bp != null) return ap - bp;
+      if(ap != null) return -1;
+      if(bp != null) return 1;
+      return a.driver.name.localeCompare(b.driver.name);
+    });
+
+    board.innerHTML = entries.map(({driver,h})=>{
+      const team = STATE.teams.find(t=>t.id===h.teamId);
+      return `<div class="vault-row" data-id="${driver.id}">
+        <span class="rnumber">${h.standing != null ? esc(h.standing) : '\u2014'}</span>
+        <span class="swatch" style="background:${esc(team?.color||'#666')}"></span>
+        <span class="rname">${esc(driver.name)}</span>
+        <span class="rmeta">${team ? esc(team.name) : 'Unassigned'}${h.number != null ? ' \u00b7 #' + esc(h.number) : ''}${h.rookie ? ' \u00b7 Rookie' : ''}</span>
+        <span class="badge ${driver.canon?'badge-canon':'badge-noncanon'}">${driver.canon?'canon':'background'}</span>
+      </div>`;
+    }).join("");
+    board.querySelectorAll(".vault-row").forEach(row=>{
+      row.addEventListener("click", ()=>{ location.hash = "driver-" + row.dataset.id; });
+    });
+  }
+  seriesSel.addEventListener("change", draw);
+  yearSel.addEventListener("change", draw);
+  document.getElementById("resultsShowNoncanon").addEventListener("change", draw);
   draw();
 }
 

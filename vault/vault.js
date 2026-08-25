@@ -11,6 +11,11 @@ let STATE = null;      // { meta, series, teams, drivers }
 let DIRTY = false;
 let SAVING = false;
 
+// List filter state \u2014 kept at module level (not reset on re-render) so that
+// navigating away to a detail view and back preserves whatever the user had set.
+let driverFilters = { q: "", seriesId: "", year: "" };
+let teamFilters = { q: "", seriesId: "" };
+
 /* ---------- helpers ---------- */
 function esc(s){
   return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -31,6 +36,14 @@ function migrateState(data){
 function latestNumber(history){
   const withNum = (history||[]).filter(h=>h.number !== null && h.number !== undefined && h.number !== "").sort((a,b)=>b.year-a.year);
   return withNum.length ? withNum[0].number : null;
+}
+// Series a driver is currently in, i.e. from their most recent season on file only
+// (as opposed to every series they've ever raced in across their whole history).
+function currentSeriesIds(history){
+  const hist = (history||[]).filter(h=>h.year != null && !isNaN(h.year));
+  if(!hist.length) return [];
+  const maxYear = Math.max(...hist.map(h=>h.year));
+  return [...new Set(hist.filter(h=>h.year===maxYear).map(h=>h.seriesId))];
 }
 function getConfig(){ try{ return JSON.parse(localStorage.getItem(CONFIG_KEY) || "null"); }catch(e){ return null; } }
 function setConfig(cfg){ localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg)); }
@@ -203,9 +216,9 @@ function renderApp(){
     <div class="vault-tabs">
       <button class="vault-tab ${tab==='drivers'?'active':''}" data-tab="drivers">Drivers</button>
       <button class="vault-tab ${tab==='teams'?'active':''}" data-tab="teams">Teams</button>
-      <button class="vault-tab ${tab==='series'?'active':''}" data-tab="series">Series</button>
       <button class="vault-tab ${tab==='grid'?'active':''}" data-tab="grid">Season Grid</button>
       <button class="vault-tab ${tab==='results'?'active':''}" data-tab="results">Season Results</button>
+      <button class="vault-tab ${tab==='series'?'active':''}" data-tab="series">Series</button>
     </div>
     <div id="vaultTabBody"></div>
   `;
@@ -230,11 +243,16 @@ window.addEventListener("hashchange", renderApp);
 /* ---------- DRIVERS: list ---------- */
 function renderDriversList(){
   const body = document.getElementById("vaultTabBody");
+  const years = [...new Set(STATE.drivers.flatMap(d=>(d.history||[]).map(h=>h.year)))]
+    .filter(y=>y!=null && !isNaN(y)).sort((a,b)=>b-a);
   body.innerHTML = `
     <div class="vault-toolbar">
       <input type="search" id="driverSearch" placeholder="Search drivers\u2026">
       <select id="driverSeriesFilter"><option value="">All series</option>
         ${STATE.series.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}
+      </select>
+      <select id="driverYearFilter"><option value="">All years</option>
+        ${years.map(y=>`<option value="${y}">${y}</option>`).join("")}
       </select>
       <div class="spacer"></div>
       <button class="btn-vault-add" id="addDriverBtn">+ New driver</button>
@@ -244,19 +262,29 @@ function renderDriversList(){
   document.getElementById("addDriverBtn").addEventListener("click", ()=>{ location.hash = "driver-new"; });
   const search = document.getElementById("driverSearch");
   const seriesFilter = document.getElementById("driverSeriesFilter");
+  const yearFilter = document.getElementById("driverYearFilter");
+  // Restore whatever was previously selected.
+  search.value = driverFilters.q;
+  seriesFilter.value = driverFilters.seriesId;
+  yearFilter.value = driverFilters.year;
   const draw = ()=>{
-    const q = search.value.trim().toLowerCase();
-    const sid = seriesFilter.value ? Number(seriesFilter.value) : null;
+    driverFilters = { q: search.value, seriesId: seriesFilter.value, year: yearFilter.value };
+    const q = driverFilters.q.trim().toLowerCase();
+    const sid = driverFilters.seriesId ? Number(driverFilters.seriesId) : null;
+    const yr = driverFilters.year ? Number(driverFilters.year) : null;
     let list = STATE.drivers.filter(d=>{
       const matchesQ = !q || d.name.toLowerCase().includes(q);
       const seriesIds = new Set((d.history||[]).map(h=>h.seriesId));
       const matchesSeries = !sid || seriesIds.has(sid);
-      return matchesQ && matchesSeries;
+      const matchesYear = !yr || (d.history||[]).some(h=>h.year===yr);
+      return matchesQ && matchesSeries && matchesYear;
     }).sort((a,b)=>a.name.localeCompare(b.name));
     const wrap = document.getElementById("driversListBody");
     if(!list.length){ wrap.innerHTML = `<div class="vault-empty">No drivers match.</div>`; return; }
     wrap.innerHTML = list.map(d=>{
-      const seriesIds = [...new Set((d.history||[]).map(h=>h.seriesId))];
+      // Current series only \u2014 i.e. from the driver's most recent season on file,
+      // not every series they've ever raced in.
+      const seriesIds = currentSeriesIds(d.history);
       const seriesNames = seriesIds.map(currentSeriesName).join(", ") || "Unassigned";
       const num = latestNumber(d.history);
       return `<div class="vault-row" data-id="${d.id}">
@@ -272,6 +300,7 @@ function renderDriversList(){
   };
   search.addEventListener("input", draw);
   seriesFilter.addEventListener("change", draw);
+  yearFilter.addEventListener("change", draw);
   draw();
 }
 
@@ -554,7 +583,15 @@ function renderDriverForm(idParam){
       STATE.drivers[idx] = updated;
     }
     markDirty();
-    location.hash = "drivers";
+    // Stay on the form after saving rather than jumping back to the list.
+    // For a brand-new driver this moves the hash from driver-new to its real
+    // id (which re-renders via hashchange); for an existing one the hash is
+    // already correct, so re-render directly to reflect the saved values.
+    if(isNew && location.hash.replace(/^#/,"") !== "driver-" + updated.id){
+      location.hash = "driver-" + updated.id;
+    } else {
+      renderDriverForm(String(updated.id));
+    }
   });
 }
 
@@ -575,9 +612,13 @@ function renderTeamsList(){
   document.getElementById("addTeamBtn").addEventListener("click", ()=>{ location.hash = "team-new"; });
   const search = document.getElementById("teamSearch");
   const seriesFilter = document.getElementById("teamSeriesFilter");
+  // Restore whatever was previously selected.
+  search.value = teamFilters.q;
+  seriesFilter.value = teamFilters.seriesId;
   const draw = ()=>{
-    const q = search.value.trim().toLowerCase();
-    const sid = seriesFilter.value ? Number(seriesFilter.value) : null;
+    teamFilters = { q: search.value, seriesId: seriesFilter.value };
+    const q = teamFilters.q.trim().toLowerCase();
+    const sid = teamFilters.seriesId ? Number(teamFilters.seriesId) : null;
     let list = STATE.teams.filter(t=>(!q || t.name.toLowerCase().includes(q)) && (!sid || teamSeriesIds(t).includes(sid)))
       .sort((a,b)=>a.name.localeCompare(b.name));
     const wrap = document.getElementById("teamsListBody");
@@ -702,7 +743,12 @@ function renderTeamForm(idParam){
       STATE.teams[idx] = updated;
     }
     markDirty();
-    location.hash = "teams";
+    // Stay on the form after saving rather than jumping back to the list.
+    if(isNew && location.hash.replace(/^#/,"") !== "team-" + updated.id){
+      location.hash = "team-" + updated.id;
+    } else {
+      renderTeamForm(String(updated.id));
+    }
   });
 }
 
@@ -766,8 +812,8 @@ function renderGridTab(){
 
   body.innerHTML = `
     <div class="vault-grid-controls">
-      <select id="gridYear">${years.length ? years.map(y=>`<option value="${y}">${y}</option>`).join("") : `<option value="${defaultYear}">${defaultYear}</option>`}</select>
       <select id="gridSeries">${STATE.series.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select>
+      <select id="gridYear">${years.length ? years.map(y=>`<option value="${y}">${y}</option>`).join("") : `<option value="${defaultYear}">${defaultYear}</option>`}</select>
       <label class="vault-checkbox"><input type="checkbox" id="gridShowNoncanon" checked> Include background (non-canon)</label>
     </div>
     <div class="grid-board" id="gridBoard"></div>
@@ -804,7 +850,7 @@ function renderGridTab(){
         const academyTeam = h.academyTeamId ? STATE.teams.find(t=>t.id===h.academyTeamId) : null;
         const academyLabel = academyTeam ? (academyTeam.juniorTeam || academyTeam.name) : (h.academyCustom || null);
         const academyColor = academyTeam ? (academyTeam.color || '#666') : '#666';
-        return `<div class="grid-driver ${d.canon?'':'grid-noncanon'}">
+        return `<div class="grid-driver ${d.canon?'':'grid-noncanon'}" data-driver-id="${d.id}" style="cursor:pointer;">
           <div class="grid-driver-main">
             ${h.number ? `<span class="rookie-tag" style="color:var(--gray-light); border-color:var(--line);">#${esc(h.number)}</span>` : ""}
             ${esc(d.name)} ${h.rookie ? `<span class="rookie-tag">ROOKIE</span>` : ""}
@@ -821,6 +867,9 @@ function renderGridTab(){
     }).filter(Boolean);
 
     board.innerHTML = cards.length ? cards.join("") : `<div class="vault-empty">No teams with drivers on record for this season.</div>`;
+    board.querySelectorAll("[data-driver-id]").forEach(el=>{
+      el.addEventListener("click", ()=>{ location.hash = "driver-" + el.dataset.driverId; });
+    });
   }
   seriesSel.addEventListener("change", draw);
   yearSel.addEventListener("change", draw);
@@ -828,64 +877,65 @@ function renderGridTab(){
   draw();
 }
 
-/* ---------- SEASON RESULTS tab ---------- */
+/* ---------- RESULTS tab ---------- */
 function renderResultsTab(){
   const body = document.getElementById("vaultTabBody");
-  const years = [...new Set(STATE.drivers.flatMap(d=>(d.history||[]).map(h=>h.year)))].sort((a,b)=>a-b);
+  const years = [...new Set(STATE.drivers.flatMap(d=>(d.history||[]).map(h=>h.year)))]
+    .filter(y=>y!=null && !isNaN(y)).sort((a,b)=>a-b);
   const defaultSeries = STATE.series[0]?.id;
   const defaultYear = years[years.length-1] || new Date().getFullYear();
 
   body.innerHTML = `
     <div class="vault-grid-controls">
-      <select id="resultsYear">${years.length ? years.map(y=>`<option value="${y}">${y}</option>`).join("") : `<option value="${defaultYear}">${defaultYear}</option>`}</select>
       <select id="resultsSeries">${STATE.series.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select>
+      <select id="resultsYear">${years.length ? years.map(y=>`<option value="${y}">${y}</option>`).join("") : `<option value="${defaultYear}">${defaultYear}</option>`}</select>
       <label class="vault-checkbox"><input type="checkbox" id="resultsShowNoncanon" checked> Include background (non-canon)</label>
     </div>
     <div class="vault-list" id="resultsBoard"></div>
   `;
-  const yearSel = document.getElementById("resultsYear");
   const seriesSel = document.getElementById("resultsSeries");
-  yearSel.value = defaultYear;
+  const yearSel = document.getElementById("resultsYear");
   seriesSel.value = defaultSeries;
+  yearSel.value = defaultYear;
 
-  // Sort by final standing (ascending) when present; entries with no standing
-  // fall to the bottom and are sorted alphabetically among themselves. If
-  // nothing in the season has a standing at all, this collapses to a plain
-  // alphabetical list.
   function draw(){
     const seriesId = Number(seriesSel.value);
     const year = Number(yearSel.value);
     const showNoncanon = document.getElementById("resultsShowNoncanon").checked;
     const board = document.getElementById("resultsBoard");
 
-    const entries = [];
-    STATE.drivers.forEach(d=>{
-      if(!showNoncanon && !d.canon) return;
-      const h = (d.history||[]).find(h=>h.year===year && h.seriesId===seriesId);
-      if(h) entries.push({ driver:d, h });
-    });
+    // One row per driver with a history entry in this series/year.
+    const entries = STATE.drivers
+      .filter(d=> showNoncanon || d.canon)
+      .map(d=>{
+        const h = (d.history||[]).find(h=>h.year===year && h.seriesId===seriesId);
+        return h ? { driver: d, history: h } : null;
+      })
+      .filter(Boolean);
 
     if(!entries.length){
       board.innerHTML = `<div class="vault-empty">No results on record for this season.</div>`;
       return;
     }
 
-    entries.sort((a,b)=>{
-      const ap = a.h.standing, bp = b.h.standing;
-      if(ap != null && bp != null) return ap - bp;
-      if(ap != null) return -1;
-      if(bp != null) return 1;
-      return a.driver.name.localeCompare(b.driver.name);
-    });
+    // Only order by finishing position when every entry on the list actually has
+    // one recorded \u2014 if positions are missing entirely, or only partly filled
+    // in, fall back to alphabetical rather than imply an ordering the data
+    // doesn't back up.
+    const hasPos = h => h.standing !== null && h.standing !== undefined && h.standing !== "";
+    const allHavePositions = entries.every(e=>hasPos(e.history));
+    entries.sort((a,b)=> allHavePositions
+      ? a.history.standing - b.history.standing
+      : a.driver.name.localeCompare(b.driver.name));
 
-    board.innerHTML = entries.map(({driver,h})=>{
+    board.innerHTML = entries.map(({driver:d, history:h})=>{
       const team = STATE.teams.find(t=>t.id===h.teamId);
-      return `<div class="vault-row" data-id="${driver.id}">
-        <span class="rnumber">${h.standing != null ? esc(h.standing) : '\u2014'}</span>
-        <span class="swatch" style="background:${esc(team?.color||'#666')}"></span>
-        <span class="rname">${esc(driver.name)}</span>
-        <span class="rmeta">${team ? esc(team.name) : 'Unassigned'}${h.number != null ? ' \u00b7 #' + esc(h.number) : ''}${h.rookie ? ' \u00b7 Rookie' : ''}</span>
-        <span class="badge ${driver.canon?'badge-canon':'badge-noncanon'}">${driver.canon?'canon':'background'}</span>
+      return `<div class="vault-row" data-id="${d.id}">
+        <span class="rnumber">${hasPos(h) ? 'P'+esc(h.standing) : ''}</span>
+        <span class="swatch" style="background:${esc(team?team.color:'#666')}"></span>
+        <span class="rname">${esc(d.name)}</span>
+        <span class="rmeta">${esc(team ? team.name : 'No team')}</span>
+        <span class="badge ${d.canon?'badge-canon':'badge-noncanon'}">${d.canon?'canon':'background'}</span>
       </div>`;
     }).join("");
     board.querySelectorAll(".vault-row").forEach(row=>{

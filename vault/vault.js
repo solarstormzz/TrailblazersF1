@@ -45,6 +45,14 @@ function currentSeriesIds(history){
   const maxYear = Math.max(...hist.map(h=>h.year));
   return [...new Set(hist.filter(h=>h.year===maxYear).map(h=>h.seriesId))];
 }
+// Approximate age during a given season, from birthDate if present, else birthYear.
+function ageInYear(driver, year){
+  if(!year) return null;
+  let by = driver.birthYear;
+  if(!by && driver.birthDate){ by = Number(driver.birthDate.split("-")[0]) || null; }
+  if(!by) return null;
+  return year - by;
+}
 function getConfig(){ try{ return JSON.parse(localStorage.getItem(CONFIG_KEY) || "null"); }catch(e){ return null; } }
 function setConfig(cfg){ localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg)); }
 function clearConfig(){ localStorage.removeItem(CONFIG_KEY); }
@@ -274,23 +282,41 @@ function renderDriversList(){
     const yr = driverFilters.year ? Number(driverFilters.year) : null;
     let list = STATE.drivers.filter(d=>{
       const matchesQ = !q || d.name.toLowerCase().includes(q);
-      const seriesIds = new Set((d.history||[]).map(h=>h.seriesId));
-      const matchesSeries = !sid || seriesIds.has(sid);
-      const matchesYear = !yr || (d.history||[]).some(h=>h.year===yr);
-      return matchesQ && matchesSeries && matchesYear;
+      let matchesFilter;
+      if(sid && yr) matchesFilter = (d.history||[]).some(h=>h.year===yr && h.seriesId===sid);
+      else if(sid) matchesFilter = (d.history||[]).some(h=>h.seriesId===sid);
+      else if(yr) matchesFilter = (d.history||[]).some(h=>h.year===yr);
+      else matchesFilter = true;
+      return matchesQ && matchesFilter;
     }).sort((a,b)=>a.name.localeCompare(b.name));
     const wrap = document.getElementById("driversListBody");
     if(!list.length){ wrap.innerHTML = `<div class="vault-empty">No drivers match.</div>`; return; }
     wrap.innerHTML = list.map(d=>{
-      // Current series only \u2014 i.e. from the driver's most recent season on file,
-      // not every series they've ever raced in.
-      const seriesIds = currentSeriesIds(d.history);
-      const seriesNames = seriesIds.map(currentSeriesName).join(", ") || "Unassigned";
       const num = latestNumber(d.history);
+      const metaParts = [];
+      if(sid && yr){
+        // A specific season + series is selected \u2014 show that season's team,
+        // the driver's age that year, and their academy seat if they had one.
+        const entry = (d.history||[]).find(h=>h.year===yr && h.seriesId===sid);
+        const team = entry ? STATE.teams.find(t=>t.id===entry.teamId) : null;
+        const academyTeam = entry && entry.academyTeamId ? STATE.teams.find(t=>t.id===entry.academyTeamId) : null;
+        const academyLabel = academyTeam ? (academyTeam.juniorTeam || academyTeam.name) : (entry && entry.academyCustom ? entry.academyCustom : null);
+        const age = ageInYear(d, yr);
+        if(team) metaParts.push(team.name);
+        if(age != null) metaParts.push(`Age ${age}`);
+        if(academyLabel) metaParts.push(`Academy: ${academyLabel}`);
+      } else {
+        // Current series only \u2014 i.e. from the driver's most recent season on file,
+        // not every series they've ever raced in.
+        const seriesIds = currentSeriesIds(d.history);
+        metaParts.push(seriesIds.map(currentSeriesName).join(", ") || "Unassigned");
+      }
+      if(d.nationality) metaParts.push(d.nationality);
+      const metaText = metaParts.join(" \u00b7 ");
       return `<div class="vault-row" data-id="${d.id}">
         <span class="rnumber">${num ? '#'+esc(num) : ''}</span>
         <span class="rname">${esc(d.name)}</span>
-        <span class="rmeta">${esc(seriesNames)}</span>
+        <span class="rmeta">${esc(metaText)}</span>
         <span class="badge ${d.canon?'badge-canon':'badge-noncanon'}">${d.canon?'canon':'background'}</span>
       </div>`;
     }).join("");

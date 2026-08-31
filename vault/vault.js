@@ -15,14 +15,6 @@ let SAVING = false;
 // navigating away to a detail view and back preserves whatever the user had set.
 let driverFilters = { q: "", seriesId: "", year: "" };
 let teamFilters = { q: "", seriesId: "" };
-// Grid/Results filters use null (rather than "") to mean "not chosen yet, use
-// the tab's computed default" \u2014 unlike the driver/team toolbars, these two
-// selects have no blank/"all" option of their own.
-let gridFilters = { seriesId: null, year: null, showNoncanon: true };
-let resultsFilters = { seriesId: null, year: null, showNoncanon: true };
-// Which list hash a driver-detail view was opened from, so "Back" (and delete)
-// return there instead of always landing on the Drivers tab.
-let driverReturnHash = "drivers";
 
 /* ---------- helpers ---------- */
 function esc(s){
@@ -52,22 +44,6 @@ function currentSeriesIds(history){
   if(!hist.length) return [];
   const maxYear = Math.max(...hist.map(h=>h.year));
   return [...new Set(hist.filter(h=>h.year===maxYear).map(h=>h.seriesId))];
-}
-// Approximate age during a given season, using a mid-year (Jul 1) reference
-// point so it reflects "age for that season" rather than age-on-Jan-1.
-// Falls back to the coarser birthYear field when no exact birth date is on file.
-function ageAtYear(driver, year){
-  if(driver.birthDate){
-    const parts = driver.birthDate.split("-").map(Number);
-    if(parts.length===3 && !parts.some(isNaN)){
-      const [by, bm, bd] = parts;
-      let age = year - by;
-      if(bm > 7 || (bm===7 && bd>1)) age--;
-      return age;
-    }
-  }
-  if(driver.birthYear != null && driver.birthYear !== "") return year - Number(driver.birthYear);
-  return null;
 }
 function getConfig(){ try{ return JSON.parse(localStorage.getItem(CONFIG_KEY) || "null"); }catch(e){ return null; } }
 function setConfig(cfg){ localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg)); }
@@ -236,18 +212,13 @@ function renderApp(){
   const hash = location.hash.replace(/^#/,"") || "drivers";
   const tab = hash.split("-")[0].split("/")[0];
 
-  // Remember the last list view (Drivers / Grid / Results) so a driver detail
-  // opened from any of them returns to that same view \u2014 with its filters \u2014
-  // instead of always bouncing back to the Drivers tab.
-  if(hash==="drivers" || hash==="grid" || hash==="results"){ driverReturnHash = hash; }
-
   app.innerHTML = `
     <div class="vault-tabs">
       <button class="vault-tab ${tab==='drivers'?'active':''}" data-tab="drivers">Drivers</button>
       <button class="vault-tab ${tab==='teams'?'active':''}" data-tab="teams">Teams</button>
+      <button class="vault-tab ${tab==='series'?'active':''}" data-tab="series">Series</button>
       <button class="vault-tab ${tab==='grid'?'active':''}" data-tab="grid">Season Grid</button>
       <button class="vault-tab ${tab==='results'?'active':''}" data-tab="results">Season Results</button>
-      <button class="vault-tab ${tab==='series'?'active':''}" data-tab="series">Series</button>
     </div>
     <div id="vaultTabBody"></div>
   `;
@@ -277,11 +248,11 @@ function renderDriversList(){
   body.innerHTML = `
     <div class="vault-toolbar">
       <input type="search" id="driverSearch" placeholder="Search drivers\u2026">
-      <select id="driverSeriesFilter"><option value="">All series</option>
-        ${STATE.series.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}
-      </select>
       <select id="driverYearFilter"><option value="">All years</option>
         ${years.map(y=>`<option value="${y}">${y}</option>`).join("")}
+      </select>
+      <select id="driverSeriesFilter"><option value="">All series</option>
+        ${STATE.series.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}
       </select>
       <div class="spacer"></div>
       <button class="btn-vault-add" id="addDriverBtn">+ New driver</button>
@@ -301,52 +272,25 @@ function renderDriversList(){
     const q = driverFilters.q.trim().toLowerCase();
     const sid = driverFilters.seriesId ? Number(driverFilters.seriesId) : null;
     const yr = driverFilters.year ? Number(driverFilters.year) : null;
-    // When both a series and a year are picked, they need to match the SAME
-    // history entry \u2014 e.g. F2 + 2024 should only match someone who actually
-    // raced F2 in 2024, not an F2 driver from some other year who happens to
-    // have raced anything at all in 2024.
     let list = STATE.drivers.filter(d=>{
       const matchesQ = !q || d.name.toLowerCase().includes(q);
-      const matchesCombo = (!sid && !yr) || (d.history||[]).some(h =>
-        (!sid || h.seriesId===sid) && (!yr || h.year===yr));
-      return matchesQ && matchesCombo;
+      const seriesIds = new Set((d.history||[]).map(h=>h.seriesId));
+      const matchesSeries = !sid || seriesIds.has(sid);
+      const matchesYear = !yr || (d.history||[]).some(h=>h.year===yr);
+      return matchesQ && matchesSeries && matchesYear;
     }).sort((a,b)=>a.name.localeCompare(b.name));
     const wrap = document.getElementById("driversListBody");
     if(!list.length){ wrap.innerHTML = `<div class="vault-empty">No drivers match.</div>`; return; }
     wrap.innerHTML = list.map(d=>{
+      // Current series only \u2014 i.e. from the driver's most recent season on file,
+      // not every series they've ever raced in.
+      const seriesIds = currentSeriesIds(d.history);
+      const seriesNames = seriesIds.map(currentSeriesName).join(", ") || "Unassigned";
       const num = latestNumber(d.history);
-      let metaText, academyLabel = null, academyColor = "#666";
-      if(sid || yr){
-        // Show context for the selected year/series specifically, rather than
-        // the driver's current (most recent) season.
-        const h = (d.history||[]).find(hh => (!sid || hh.seriesId===sid) && (!yr || hh.year===yr));
-        const team = h ? STATE.teams.find(t=>t.id===h.teamId) : null;
-        const parts = [];
-        if(team) parts.push(team.name);
-        if(!sid && h) parts.push(currentSeriesName(h.seriesId));
-        if(yr){ const age = ageAtYear(d, yr); if(age != null) parts.push(`Age ${age}`); }
-        metaText = parts.join(" \u00b7 ") || "No record for this selection";
-        if(h){
-          if(h.academyTeamId){
-            const at = STATE.teams.find(t=>t.id===h.academyTeamId);
-            academyLabel = at ? (at.juniorTeam || at.name) : null;
-            academyColor = at ? (at.color || "#666") : "#666";
-          } else if(h.academyCustom){
-            academyLabel = h.academyCustom;
-          }
-        }
-      } else {
-        // No filter applied \u2014 fall back to current series, i.e. from the
-        // driver's most recent season on file.
-        const seriesIds = currentSeriesIds(d.history);
-        metaText = seriesIds.map(currentSeriesName).join(", ") || "Unassigned";
-      }
       return `<div class="vault-row" data-id="${d.id}">
         <span class="rnumber">${num ? '#'+esc(num) : ''}</span>
         <span class="rname">${esc(d.name)}</span>
-        <span class="rmeta">${esc(metaText)}</span>
-        ${d.nationality ? `<span class="rmeta">${esc(d.nationality)}</span>` : ""}
-        ${academyLabel ? `<span class="academy-tag" style="border-color:${esc(academyColor)}; color:${esc(academyColor)}">Academy: ${esc(academyLabel)}</span>` : ""}
+        <span class="rmeta">${esc(seriesNames)}</span>
         <span class="badge ${d.canon?'badge-canon':'badge-noncanon'}">${d.canon?'canon':'background'}</span>
       </div>`;
     }).join("");
@@ -370,7 +314,7 @@ function renderDriverForm(idParam){
     seriesStats:[]
   } : STATE.drivers.find(d=>d.id===Number(idParam));
 
-  if(!driver){ location.hash = driverReturnHash; return; }
+  if(!driver){ location.hash = "drivers"; return; }
   if(!driver.seriesStats) driver.seriesStats = [];
   const body = document.getElementById("vaultTabBody");
 
@@ -529,13 +473,13 @@ function renderDriverForm(idParam){
   document.getElementById("birthYearInput").addEventListener("input", updateAgeHint);
   updateAgeHint();
 
-  document.getElementById("cancelDriverBtn").addEventListener("click", ()=>{ location.hash = driverReturnHash; });
+  document.getElementById("cancelDriverBtn").addEventListener("click", ()=>{ location.hash = "drivers"; });
   const delBtn = document.getElementById("deleteDriverBtn");
   if(delBtn) delBtn.addEventListener("click", ()=>{
     if(!confirm(`Delete ${driver.name}? This can't be undone until you Save.`)) return;
     STATE.drivers = STATE.drivers.filter(d=>d.id!==driver.id);
     markDirty();
-    location.hash = driverReturnHash;
+    location.hash = "drivers";
   });
 
   function renderHistoryRows(){
@@ -639,15 +583,7 @@ function renderDriverForm(idParam){
       STATE.drivers[idx] = updated;
     }
     markDirty();
-    // Stay on the form after saving rather than jumping back to the list.
-    // For a brand-new driver this moves the hash from driver-new to its real
-    // id (which re-renders via hashchange); for an existing one the hash is
-    // already correct, so re-render directly to reflect the saved values.
-    if(isNew && location.hash.replace(/^#/,"") !== "driver-" + updated.id){
-      location.hash = "driver-" + updated.id;
-    } else {
-      renderDriverForm(String(updated.id));
-    }
+    location.hash = "drivers";
   });
 }
 
@@ -799,12 +735,7 @@ function renderTeamForm(idParam){
       STATE.teams[idx] = updated;
     }
     markDirty();
-    // Stay on the form after saving rather than jumping back to the list.
-    if(isNew && location.hash.replace(/^#/,"") !== "team-" + updated.id){
-      location.hash = "team-" + updated.id;
-    } else {
-      renderTeamForm(String(updated.id));
-    }
+    location.hash = "teams";
   });
 }
 
@@ -868,30 +799,21 @@ function renderGridTab(){
 
   body.innerHTML = `
     <div class="vault-grid-controls">
-      <select id="gridSeries">${STATE.series.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select>
       <select id="gridYear">${years.length ? years.map(y=>`<option value="${y}">${y}</option>`).join("") : `<option value="${defaultYear}">${defaultYear}</option>`}</select>
+      <select id="gridSeries">${STATE.series.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select>
       <label class="vault-checkbox"><input type="checkbox" id="gridShowNoncanon" checked> Include background (non-canon)</label>
     </div>
     <div class="grid-board" id="gridBoard"></div>
   `;
   const seriesSel = document.getElementById("gridSeries");
   const yearSel = document.getElementById("gridYear");
-  const noncanonCb = document.getElementById("gridShowNoncanon");
-  // Restore whatever was previously selected, falling back to the computed
-  // default only the first time this tab is opened.
-  seriesSel.value = gridFilters.seriesId != null ? gridFilters.seriesId : defaultSeries;
-  yearSel.value = gridFilters.year != null ? gridFilters.year : defaultYear;
-  noncanonCb.checked = gridFilters.showNoncanon;
+  seriesSel.value = defaultSeries;
+  yearSel.value = defaultYear;
 
   function draw(){
-    gridFilters = {
-      seriesId: Number(seriesSel.value),
-      year: Number(yearSel.value),
-      showNoncanon: noncanonCb.checked
-    };
-    const seriesId = gridFilters.seriesId;
-    const year = gridFilters.year;
-    const showNoncanon = gridFilters.showNoncanon;
+    const seriesId = Number(seriesSel.value);
+    const year = Number(yearSel.value);
+    const showNoncanon = document.getElementById("gridShowNoncanon").checked;
     const teamsInSeries = STATE.teams.filter(t=>teamSeriesIds(t).includes(seriesId));
     const board = document.getElementById("gridBoard");
     const isTopSeries = seriesId === STATE.series[0]?.id;
@@ -938,11 +860,16 @@ function renderGridTab(){
   }
   seriesSel.addEventListener("change", draw);
   yearSel.addEventListener("change", draw);
-  noncanonCb.addEventListener("change", draw);
+  document.getElementById("gridShowNoncanon").addEventListener("change", draw);
   draw();
 }
 
-/* ---------- RESULTS tab ---------- */
+/* ---------- SEASON RESULTS tab ----------
+   A flat, ranked results table for one series/season: every driver's entry for
+   that season, ordered by their final standing. Entries without a standing sort
+   alphabetically after everyone who has one \u2014 so if nobody has a standing on
+   record, the whole list is just alphabetical, and if only some drivers do,
+   those are ranked first with the rest tacked on alphabetically below. */
 function renderResultsTab(){
   const body = document.getElementById("vaultTabBody");
   const years = [...new Set(STATE.drivers.flatMap(d=>(d.history||[]).map(h=>h.year)))]
@@ -952,73 +879,60 @@ function renderResultsTab(){
 
   body.innerHTML = `
     <div class="vault-grid-controls">
-      <select id="resultsSeries">${STATE.series.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select>
       <select id="resultsYear">${years.length ? years.map(y=>`<option value="${y}">${y}</option>`).join("") : `<option value="${defaultYear}">${defaultYear}</option>`}</select>
+      <select id="resultsSeries">${STATE.series.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select>
       <label class="vault-checkbox"><input type="checkbox" id="resultsShowNoncanon" checked> Include background (non-canon)</label>
     </div>
     <div class="vault-list" id="resultsBoard"></div>
   `;
-  const seriesSel = document.getElementById("resultsSeries");
   const yearSel = document.getElementById("resultsYear");
-  const noncanonCb = document.getElementById("resultsShowNoncanon");
-  // Restore whatever was previously selected, falling back to the computed
-  // default only the first time this tab is opened.
-  seriesSel.value = resultsFilters.seriesId != null ? resultsFilters.seriesId : defaultSeries;
-  yearSel.value = resultsFilters.year != null ? resultsFilters.year : defaultYear;
-  noncanonCb.checked = resultsFilters.showNoncanon;
+  const seriesSel = document.getElementById("resultsSeries");
+  yearSel.value = defaultYear;
+  seriesSel.value = defaultSeries;
 
   function draw(){
-    resultsFilters = {
-      seriesId: Number(seriesSel.value),
-      year: Number(yearSel.value),
-      showNoncanon: noncanonCb.checked
-    };
-    const seriesId = resultsFilters.seriesId;
-    const year = resultsFilters.year;
-    const showNoncanon = resultsFilters.showNoncanon;
+    const seriesId = Number(seriesSel.value);
+    const year = Number(yearSel.value);
+    const showNoncanon = document.getElementById("resultsShowNoncanon").checked;
     const board = document.getElementById("resultsBoard");
 
-    // One row per driver with a history entry in this series/year.
-    const entries = STATE.drivers
-      .filter(d=> showNoncanon || d.canon)
-      .map(d=>{
-        const h = (d.history||[]).find(h=>h.year===year && h.seriesId===seriesId);
-        return h ? { driver: d, history: h } : null;
-      })
-      .filter(Boolean);
+    const rows = [];
+    STATE.drivers.forEach(d=>{
+      if(!showNoncanon && !d.canon) return;
+      (d.history||[]).forEach(h=>{
+        if(h.year===year && h.seriesId===seriesId) rows.push({ driver:d, entry:h });
+      });
+    });
 
-    if(!entries.length){
-      board.innerHTML = `<div class="vault-empty">No results on record for this season.</div>`;
-      return;
-    }
+    if(!rows.length){ board.innerHTML = `<div class="vault-empty">No results on record for this season.</div>`; return; }
 
-    // Only order by finishing position when every entry on the list actually has
-    // one recorded \u2014 if positions are missing entirely, or only partly filled
-    // in, fall back to alphabetical rather than imply an ordering the data
-    // doesn't back up.
-    const hasPos = h => h.standing !== null && h.standing !== undefined && h.standing !== "";
-    const allHavePositions = entries.every(e=>hasPos(e.history));
-    entries.sort((a,b)=> allHavePositions
-      ? a.history.standing - b.history.standing
-      : a.driver.name.localeCompare(b.driver.name));
+    rows.sort((a,b)=>{
+      const ap = a.entry.standing, bp = b.entry.standing;
+      // Ranked entries come first, ordered by position; unranked entries follow,
+      // ordered alphabetically by driver name.
+      if(ap!=null && bp!=null) return ap - bp || a.driver.name.localeCompare(b.driver.name);
+      if(ap!=null) return -1;
+      if(bp!=null) return 1;
+      return a.driver.name.localeCompare(b.driver.name);
+    });
 
-    board.innerHTML = entries.map(({driver:d, history:h})=>{
-      const team = STATE.teams.find(t=>t.id===h.teamId);
-      return `<div class="vault-row" data-id="${d.id}">
-        <span class="rnumber">${hasPos(h) ? 'P'+esc(h.standing) : ''}</span>
-        <span class="swatch" style="background:${esc(team?team.color:'#666')}"></span>
-        <span class="rname">${esc(d.name)}</span>
-        <span class="rmeta">${esc(team ? team.name : 'No team')}</span>
-        <span class="badge ${d.canon?'badge-canon':'badge-noncanon'}">${d.canon?'canon':'background'}</span>
+    board.innerHTML = rows.map(r=>{
+      const team = STATE.teams.find(t=>t.id===r.entry.teamId);
+      const pos = r.entry.standing != null && r.entry.standing !== "" ? r.entry.standing : "\u2014";
+      return `<div class="vault-row" data-id="${r.driver.id}">
+        <span class="rnumber">${esc(pos)}</span>
+        <span class="rname">${esc(r.driver.name)}</span>
+        <span class="rmeta">${team ? esc(team.name) : ""}</span>
+        <span class="badge ${r.driver.canon?'badge-canon':'badge-noncanon'}">${r.driver.canon?'canon':'background'}</span>
       </div>`;
     }).join("");
     board.querySelectorAll(".vault-row").forEach(row=>{
       row.addEventListener("click", ()=>{ location.hash = "driver-" + row.dataset.id; });
     });
   }
-  seriesSel.addEventListener("change", draw);
   yearSel.addEventListener("change", draw);
-  noncanonCb.addEventListener("change", draw);
+  seriesSel.addEventListener("change", draw);
+  document.getElementById("resultsShowNoncanon").addEventListener("change", draw);
   draw();
 }
 

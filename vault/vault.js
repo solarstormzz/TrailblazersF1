@@ -40,6 +40,12 @@ function migrateState(data){
     if(r.circuit === undefined) r.circuit = "";
     if(r.laps === undefined) r.laps = null;
     if(r.conditions === undefined) r.conditions = "";
+    // Backfill points/DNF on any race saved before auto-scoring existed \u2014
+    // dnf defaults from the existing notes text, points are then derived.
+    r.results.forEach(res=>{
+      if(res.dnf === undefined) res.dnf = looksLikeDnf(res.position, res.notes);
+    });
+    recomputeRacePoints(r);
     return r;
   });
   return data;
@@ -74,6 +80,78 @@ function matchTeamByName(name, seriesId){
     if(active.length === 1) partial = active;
   }
   return partial.length === 1 ? partial[0] : null;
+}
+
+/* ---------- RACES: points ----------
+   Standard scoring: race top 10 get 25-18-15-12-10-8-6-4-2-1, sprints pay out
+   top 8 at 8-7-6-5-4-3-2-1. A DNF (or an unparseable/blank position) always
+   scores zero, regardless of what the position column claims. */
+const RACE_POINTS = {1:25,2:18,3:15,4:12,5:10,6:8,7:6,8:4,9:2,10:1};
+const SPRINT_POINTS = {1:8,2:7,3:6,4:5,5:4,6:3,7:2,8:1};
+function pointsForResult(kind, position, dnf){
+  if(dnf) return 0;
+  const pos = parseInt(String(position ?? "").trim(), 10);
+  if(!Number.isFinite(pos)) return 0;
+  const table = kind === "sprint" ? SPRINT_POINTS : RACE_POINTS;
+  return table[pos] || 0;
+}
+// Heuristic used only when importing/scanning a race file, where retirements
+// are often signalled through the position or notes column rather than a
+// dedicated field \u2014 a plain numeric position with no such marker is assumed
+// classified/finished.
+function looksLikeDnf(position, notes){
+  const posText = String(position ?? "").trim();
+  if(posText && !/^\d+$/.test(posText)) return true; // e.g. "DNF", "DNS", "DSQ", "Ret"
+  return /\b(dnf|dns|dsq|ret(?:ired)?)\b/i.test(String(notes || ""));
+}
+// Recomputes every result row's points in place from its position/dnf/kind \u2014
+// call this any time a race's results are saved so the stored points never
+// drift out of sync with a hand-edited position or DNF flag.
+function recomputeRacePoints(race){
+  (race.results || []).forEach(r=>{
+    r.points = pointsForResult(race.kind, r.position, !!r.dnf);
+  });
+}
+// Career/season race record for one driver, aggregated straight from
+// STATE.races \u2014 nothing here is stored on the driver record itself, so it's
+// always in sync with whatever's on the Races tab. Wins/podiums/poles follow
+// real-F1 convention (race sessions only); points combine race + sprint,
+// since sprint points count toward the championship.
+function computeDriverRaceRecord(driverId){
+  const rec = {
+    race: { starts:0, wins:0, podiums:0, poles:0, dnfs:0, points:0 },
+    sprint: { starts:0, wins:0, podiums:0, dnfs:0, points:0 }
+  };
+  (STATE.races || []).forEach(race=>{
+    const bucket = race.kind === "sprint" ? rec.sprint : rec.race;
+    const result = (race.results || []).find(r=>r.driverId === driverId);
+    if(result){
+      bucket.starts++;
+      bucket.points += result.points || 0;
+      if(result.dnf){ bucket.dnfs++; }
+      else {
+        const pos = parseInt(String(result.position || "").trim(), 10);
+        if(pos === 1) bucket.wins++;
+        if(pos >= 1 && pos <= 3) bucket.podiums++;
+      }
+    }
+    if(race.kind !== "sprint"){
+      const pole = (race.qualifying || []).find(q=>String(q.position||"").trim()==="1" && q.driverId===driverId);
+      if(pole) rec.race.poles++;
+    }
+  });
+  rec.totalPoints = rec.race.points + rec.sprint.points;
+  return rec;
+}
+// Sum of a driver's race+sprint points for one season/series \u2014 used on the
+// Season Results board.
+function seasonPointsForDriver(driverId, seriesId, year){
+  return (STATE.races || [])
+    .filter(r=>r.seriesId===seriesId && r.year===year)
+    .reduce((sum, r)=>{
+      const result = (r.results || []).find(x=>x.driverId === driverId);
+      return sum + (result ? (result.points || 0) : 0);
+    }, 0);
 }
 
 /* ---------- RACES: markdown parser ----------
@@ -537,6 +615,12 @@ function renderDriverForm(idParam){
           <div class="vault-field"><label>Wins</label><input type="number" name="wins" value="${driver.wins ?? 0}"></div>
           <div class="vault-field"><label>Podiums</label><input type="number" name="podiums" value="${driver.podiums ?? 0}"></div>
           <div class="vault-field"><label>Poles</label><input type="number" name="poles" value="${driver.poles ?? 0}"></div>
+          ${!isNew ? `
+          <div class="vault-field span2">
+            <label>Race record</label>
+            <div class="vault-hint" style="margin-top:-4px; margin-bottom:8px;">Computed live from the Races tab \u2014 not editable here.</div>
+            <div class="vault-race-record" id="autoRaceRecord"></div>
+          </div>` : ""}
           <div class="vault-field">
             <label>Status</label>
             <div class="vault-checkbox"><input type="checkbox" name="stillActive" ${driver.stillActive?'checked':''}> Still active</div>
@@ -578,6 +662,25 @@ function renderDriverForm(idParam){
       </form>
     </div>
   `;
+
+  if(!isNew){
+    const rec = computeDriverRaceRecord(driver.id);
+    const recRow = (label, r, showPoles) => `<div class="race-record-row">
+      <span class="rr-label">${esc(label)}</span>
+      <span>${r.starts}</span>
+      <span>${r.wins}</span>
+      <span>${r.podiums}</span>
+      <span>${showPoles ? r.poles : "\u2014"}</span>
+      <span>${r.dnfs}</span>
+      <span>${r.points}</span>
+    </div>`;
+    document.getElementById("autoRaceRecord").innerHTML = `
+      <div class="race-record-row head"><span></span><span>Starts</span><span>Wins</span><span>Podiums</span><span>Poles</span><span>DNFs</span><span>Points</span></div>
+      ${recRow("Race", rec.race, true)}
+      ${recRow("Sprint", rec.sprint, false)}
+      <div class="race-record-total">Career championship points (race + sprint): <strong>${rec.totalPoints}</strong></div>
+    `;
+  }
 
   function updateAgeHint(){
     const bdVal = document.getElementById("birthDateInput").value;
@@ -1053,10 +1156,12 @@ function renderResultsTab(){
     board.innerHTML = rows.map(r=>{
       const team = STATE.teams.find(t=>t.id===r.entry.teamId);
       const pos = r.entry.standing != null && r.entry.standing !== "" ? r.entry.standing : "\u2014";
+      const pts = seasonPointsForDriver(r.driver.id, seriesId, year);
       return `<div class="vault-row" data-id="${r.driver.id}">
         <span class="rnumber">${esc(pos)}</span>
         <span class="rname">${esc(r.driver.name)}</span>
         <span class="rmeta">${team ? esc(team.name) : ""}</span>
+        <span class="rmeta">${pts} pts</span>
         <span class="badge ${r.driver.canon?'badge-canon':'badge-noncanon'}">${r.driver.canon?'canon':'background'}</span>
       </div>`;
     }).join("");
@@ -1231,6 +1336,10 @@ function buildScanPreview(parsed, seriesId){
         ${[parsed.circuit, parsed.laps ? parsed.laps + ' laps' : '', parsed.conditions].filter(Boolean).map(esc).join(" \u00b7 ")}<br>
         ${qualiRows.length} qualifying rows \u00b7 ${resultRows.length} result rows${parsed.raceLog.length ? ' \u00b7 ' + parsed.raceLog.length + ' log lines' : ''}
       </div>
+      <div class="vault-hint" style="margin-bottom:14px;">
+        Points will be assigned automatically on import (${document.getElementById("scanKind").value === "sprint" ? "sprint scoring, top 8: 8-7-6-5-4-3-2-1" : "race scoring, top 10: 25-18-15-12-10-8-6-4-2-1"}),
+        and any position or note that looks like a retirement (DNF/DNS/DSQ/Ret) will be flagged as a DNF automatically \u2014 you can fix either on the round's edit page after saving.
+      </div>
       ${(unmatchedDrivers.length || unmatchedTeams.length) ? `
         <div class="vault-hint" style="color:var(--amber); margin-bottom:14px;">
           Couldn't auto-match against your roster: ${[...unmatchedDrivers, ...unmatchedTeams].map(esc).join(", ")}.
@@ -1270,9 +1379,13 @@ function saveScannedRace(){
     laps: parsed.laps || null,
     conditions: parsed.conditions || "",
     qualifying: qualiRows.map(r=>buildEntry(r, 'driverRaw', { time: r.time, gap: r.gap })),
-    results: resultRows.map(r=>buildEntry(r, 'driverRaw', { grid: r.grid, timeGap: r.timeGap, notes: r.notes })),
+    results: resultRows.map(r=>buildEntry(r, 'driverRaw', {
+      grid: r.grid, timeGap: r.timeGap, notes: r.notes,
+      dnf: looksLikeDnf(r.position, r.notes)
+    })),
     raceLog: parsed.raceLog
   };
+  recomputeRacePoints(race);
   STATE.races.push(race);
   markDirty();
   scanState = null;
@@ -1298,7 +1411,7 @@ function renderRaceWeekendForm(seriesId, year, round){
       <input type="text" class="rq-gap" value="${esc(r.gap||'')}" placeholder="Gap">
       <button type="button" class="btn-remove-row" data-remove-quali="${i}">&times;</button>
     </div>`;
-  const resultRowHtml = (r, i) => `
+  const resultRowHtml = (r, i, kind) => `
     <div class="race-table-row race-result-row" data-idx="${i}">
       <input type="text" class="rr-pos" value="${esc(r.position||'')}" placeholder="Pos">
       <input type="text" class="rr-driver" list="raceDriverNames" value="${esc(r.driverName||'')}" placeholder="Driver">
@@ -1306,6 +1419,8 @@ function renderRaceWeekendForm(seriesId, year, round){
       <input type="text" class="rr-grid" value="${esc(r.grid||'')}" placeholder="Grid">
       <input type="text" class="rr-timegap" value="${esc(r.timeGap||'')}" placeholder="Time/Gap">
       <input type="text" class="rr-notes" value="${esc(r.notes||'')}" placeholder="Notes">
+      <label class="vault-checkbox rr-dnf-label"><input type="checkbox" class="rr-dnf" ${r.dnf?'checked':''}> DNF</label>
+      <span class="rr-points" data-kind="${kind}">${pointsForResult(kind, r.position, !!r.dnf)}</span>
       <button type="button" class="btn-remove-row" data-remove-result="${i}">&times;</button>
     </div>`;
 
@@ -1338,8 +1453,8 @@ function renderRaceWeekendForm(seriesId, year, round){
       <div class="vault-field">
         <label>Race result</label>
         <div class="race-table">
-          <div class="race-table-row head race-result-row"><span>Pos</span><span>Driver</span><span>Team</span><span>Grid</span><span>Time/Gap</span><span>Notes</span><span></span></div>
-          <div class="result-rows">${entry.results.map(resultRowHtml).join("")}</div>
+          <div class="race-table-row head race-result-row"><span>Pos</span><span>Driver</span><span>Team</span><span>Grid</span><span>Time/Gap</span><span>Notes</span><span>DNF</span><span>Pts</span><span></span></div>
+          <div class="result-rows">${entry.results.map((r,i)=>resultRowHtml(r, i, kind)).join("")}</div>
         </div>
         <button type="button" class="btn-add-row add-result-row" style="margin-top:8px;">+ Add result row</button>
       </div>
@@ -1404,7 +1519,7 @@ function renderRaceWeekendForm(seriesId, year, round){
     btn.addEventListener("click", ()=>{
       const kind = btn.closest(".race-session-block").dataset.kind;
       const entry = kind==='race' ? race : sprint;
-      entry.results.push({ position:"", driverId:null, driverName:"", teamId:null, teamName:"", grid:"", timeGap:"", notes:"" });
+      entry.results.push({ position:"", driverId:null, driverName:"", teamId:null, teamName:"", grid:"", timeGap:"", notes:"", dnf:false, points:0 });
       markDirty();
       renderRaceWeekendForm(seriesId, year, round);
     });
@@ -1417,6 +1532,19 @@ function renderRaceWeekendForm(seriesId, year, round){
       markDirty();
       renderRaceWeekendForm(seriesId, year, round);
     });
+  });
+  // Live-updates a result row's Pts column as its position or DNF flag
+  // changes, purely cosmetic here \u2014 the authoritative value is recomputed
+  // from scratch again on Save.
+  body.querySelectorAll(".race-result-row").forEach(row=>{
+    const ptsEl = row.querySelector(".rr-points");
+    if(!ptsEl) return;
+    const kind = ptsEl.dataset.kind;
+    const refresh = ()=>{
+      ptsEl.textContent = pointsForResult(kind, row.querySelector(".rr-pos").value, row.querySelector(".rr-dnf").checked);
+    };
+    row.querySelector(".rr-pos").addEventListener("input", refresh);
+    row.querySelector(".rr-dnf").addEventListener("change", refresh);
   });
   body.querySelectorAll("[data-remove-result]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
@@ -1459,9 +1587,13 @@ function renderRaceWeekendForm(seriesId, year, round){
           teamId: tm ? tm.id : null, teamName,
           grid: row.querySelector(".rr-grid").value.trim(),
           timeGap: row.querySelector(".rr-timegap").value.trim(),
-          notes: row.querySelector(".rr-notes").value.trim()
+          notes: row.querySelector(".rr-notes").value.trim(),
+          dnf: row.querySelector(".rr-dnf").checked
         };
       });
+      // Points are always derived fresh from position/DNF/kind here \u2014 never
+      // trust whatever the live preview last showed.
+      recomputeRacePoints(entry);
       entry.raceLog = block.querySelector(".sess-log").value.split("\n").map(l=>l.trim()).filter(Boolean);
     });
     markDirty();

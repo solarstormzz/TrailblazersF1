@@ -21,6 +21,16 @@ function esc(s){
   return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 function nextId(arr){ return arr.length ? Math.max(...arr.map(x=>x.id)) + 1 : 1; }
+// Formats a "YYYY-MM-DD" <input type="date"> value for display. Parsed as a
+// local date (not via `new Date(string)`, which reads it as UTC and can land
+// on the wrong day depending on the browser's timezone).
+function formatRaceDate(s){
+  if(!s) return "";
+  const parts = String(s).split("-").map(Number);
+  if(parts.length !== 3 || parts.some(isNaN)) return s;
+  const dt = new Date(parts[0], parts[1]-1, parts[2]);
+  return dt.toLocaleDateString(undefined, { day:"numeric", month:"short", year:"numeric" });
+}
 function teamSeriesIds(t){ return t.seriesIds || (t.seriesId != null ? [t.seriesId] : []); }
 function migrateState(data){
   data.teams = (data.teams||[]).map(t=>{
@@ -40,6 +50,7 @@ function migrateState(data){
     if(r.circuit === undefined) r.circuit = "";
     if(r.laps === undefined) r.laps = null;
     if(r.conditions === undefined) r.conditions = "";
+    if(r.date === undefined) r.date = "";
     // Backfill points/DNF on any race saved before auto-scoring existed \u2014
     // dnf defaults from the existing notes text, points are then derived.
     r.results.forEach(res=>{
@@ -1137,16 +1148,18 @@ function renderResultsTab(){
     STATE.drivers.forEach(d=>{
       if(!showNoncanon && !d.canon) return;
       (d.history||[]).forEach(h=>{
-        if(h.year===year && h.seriesId===seriesId) rows.push({ driver:d, entry:h });
+        if(h.year===year && h.seriesId===seriesId) rows.push({ driver:d, entry:h, points: seasonPointsForDriver(d.id, seriesId, year) });
       });
     });
 
     if(!rows.length){ board.innerHTML = `<div class="vault-empty">No results on record for this season.</div>`; return; }
 
     rows.sort((a,b)=>{
+      // Points lead the sort, like a normal results table \u2014 a manually-set
+      // final standing only breaks a tie (e.g. equal points, or neither driver
+      // has any race data on file yet), and alphabetical is the last resort.
+      if(b.points !== a.points) return b.points - a.points;
       const ap = a.entry.standing, bp = b.entry.standing;
-      // Ranked entries come first, ordered by position; unranked entries follow,
-      // ordered alphabetically by driver name.
       if(ap!=null && bp!=null) return ap - bp || a.driver.name.localeCompare(b.driver.name);
       if(ap!=null) return -1;
       if(bp!=null) return 1;
@@ -1156,12 +1169,11 @@ function renderResultsTab(){
     board.innerHTML = rows.map(r=>{
       const team = STATE.teams.find(t=>t.id===r.entry.teamId);
       const pos = r.entry.standing != null && r.entry.standing !== "" ? r.entry.standing : "\u2014";
-      const pts = seasonPointsForDriver(r.driver.id, seriesId, year);
       return `<div class="vault-row" data-id="${r.driver.id}">
         <span class="rnumber">${esc(pos)}</span>
         <span class="rname">${esc(r.driver.name)}</span>
         <span class="rmeta">${team ? esc(team.name) : ""}</span>
-        <span class="rmeta">${pts} pts</span>
+        <span class="rmeta">${r.points} pts</span>
         <span class="badge ${r.driver.canon?'badge-canon':'badge-noncanon'}">${r.driver.canon?'canon':'background'}</span>
       </div>`;
     }).join("");
@@ -1221,7 +1233,9 @@ function renderRacesTab(){
       const sprint = entries.find(r=>r.kind==='sprint');
       const name = (race && race.name) || (sprint && sprint.name) || "Untitled round";
       const winner = race ? race.results.find(x=>String(x.position).trim()==="1") : null;
+      const date = (race && race.date) || (sprint && sprint.date);
       const metaParts = [];
+      if(date) metaParts.push(formatRaceDate(date));
       if(race && race.circuit) metaParts.push(race.circuit);
       if(winner) metaParts.push("Winner: " + (winner.driverName || "\u2014"));
       return `<div class="race-weekend-card" data-series="${seriesId}" data-year="${year}" data-round="${round}">
@@ -1378,6 +1392,7 @@ function saveScannedRace(){
     circuit: parsed.circuit || "",
     laps: parsed.laps || null,
     conditions: parsed.conditions || "",
+    date: "",
     qualifying: qualiRows.map(r=>buildEntry(r, 'driverRaw', { time: r.time, gap: r.gap })),
     results: resultRows.map(r=>buildEntry(r, 'driverRaw', {
       grid: r.grid, timeGap: r.timeGap, notes: r.notes,
@@ -1438,6 +1453,7 @@ function renderRaceWeekendForm(seriesId, year, round){
       </div>
       <div class="vault-grid-form">
         <div class="vault-field span2"><label>Name</label><input type="text" class="sess-name" value="${esc(entry.name||'')}"></div>
+        <div class="vault-field"><label>Date</label><input type="date" class="sess-date" value="${esc(entry.date||'')}"></div>
         <div class="vault-field"><label>Circuit</label><input type="text" class="sess-circuit" value="${esc(entry.circuit||'')}"></div>
         <div class="vault-field"><label>Laps</label><input type="number" class="sess-laps" value="${entry.laps ?? ''}"></div>
         <div class="vault-field span2"><label>Conditions</label><input type="text" class="sess-conditions" value="${esc(entry.conditions||'')}"></div>
@@ -1501,7 +1517,7 @@ function renderRaceWeekendForm(seriesId, year, round){
   body.querySelectorAll(".add-session-btn").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       const kind = btn.dataset.kind;
-      STATE.races.push({ id: nextId(STATE.races), seriesId, year, round, kind, name:"", circuit:"", laps:null, conditions:"", qualifying:[], results:[], raceLog:[] });
+      STATE.races.push({ id: nextId(STATE.races), seriesId, year, round, kind, name:"", circuit:"", laps:null, conditions:"", date:"", qualifying:[], results:[], raceLog:[] });
       markDirty();
       renderRaceWeekendForm(seriesId, year, round);
     });
@@ -1562,6 +1578,7 @@ function renderRaceWeekendForm(seriesId, year, round){
       const block = body.querySelector(`.race-session-block[data-kind="${kind}"]`);
       if(!block) return;
       entry.name = block.querySelector(".sess-name").value.trim();
+      entry.date = block.querySelector(".sess-date").value;
       entry.circuit = block.querySelector(".sess-circuit").value.trim();
       entry.laps = block.querySelector(".sess-laps").value ? Number(block.querySelector(".sess-laps").value) : null;
       entry.conditions = block.querySelector(".sess-conditions").value.trim();

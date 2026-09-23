@@ -31,7 +31,108 @@ function migrateState(data){
     if(t.resultsName === undefined) t.resultsName = "";
     return t;
   });
+  if(!data.races) data.races = [];
+  data.races = data.races.map(r=>{
+    if(r.qualifying === undefined) r.qualifying = [];
+    if(r.results === undefined) r.results = [];
+    if(r.raceLog === undefined) r.raceLog = [];
+    if(r.kind === undefined) r.kind = "race";
+    if(r.circuit === undefined) r.circuit = "";
+    if(r.laps === undefined) r.laps = null;
+    if(r.conditions === undefined) r.conditions = "";
+    return r;
+  });
   return data;
+}
+
+/* ---------- RACES: name matching helpers ----------
+   Used both when scanning a markdown race file (auto-matching parsed
+   driver/team names against the roster) and when hand-editing a race's
+   rows (the driver/team fields are free text with an autocomplete list,
+   re-matched on save) \u2014 so a name that doesn't match anything is never
+   a dead end, it's just kept as plain text. */
+function matchDriverByName(name){
+  const n = String(name||"").trim().toLowerCase();
+  if(!n) return null;
+  return STATE.drivers.find(d=>d.name.trim().toLowerCase()===n) || null;
+}
+function matchTeamByName(name, seriesId){
+  const n = String(name||"").trim().toLowerCase();
+  if(!n) return null;
+  const candidates = STATE.teams.filter(t=>teamSeriesIds(t).includes(seriesId));
+  const exact = candidates.find(t=>[t.name,t.fullName,t.resultsName].some(v=>String(v||"").trim().toLowerCase()===n));
+  if(exact) return exact;
+  let partial = candidates.filter(t=>{
+    const tn = t.name.trim().toLowerCase();
+    const fn = String(t.fullName||"").trim().toLowerCase();
+    return (tn && (n.includes(tn) || tn.includes(n))) || (fn && (n.includes(fn) || fn.includes(n)));
+  });
+  if(partial.length > 1){
+    // Same name reused by a historical entry (e.g. "Atlas" then vs. now) \u2014
+    // prefer whichever candidate is still active.
+    const active = partial.filter(t=>t.lastEntry == null);
+    if(active.length === 1) partial = active;
+  }
+  return partial.length === 1 ? partial[0] : null;
+}
+
+/* ---------- RACES: markdown parser ----------
+   Parses the "# Title / *circuit \u2014 laps \u2014 conditions* / ## Qualifying
+   Result / ## ... Race Result / ## Race Log" format into a plain structure.
+   Sprint files use the identical layout \u2014 the scan form is what decides
+   whether the imported session is tagged "race" or "sprint". */
+function parseRaceMarkdown(text){
+  const lines = String(text||"").replace(/\r\n/g,"\n").split("\n");
+  let title = "", circuit = "", laps = null, conditions = "";
+  let i = 0;
+  while(i < lines.length && !lines[i].trim().startsWith("# ")) i++;
+  if(i < lines.length){ title = lines[i].trim().replace(/^#\s+/, "").trim(); i++; }
+  while(i < lines.length && lines[i].trim() === "") i++;
+  if(i < lines.length && /^\*.*\*$/.test(lines[i].trim())){
+    const sub = lines[i].trim().replace(/^\*/, "").replace(/\*$/, "");
+    const parts = sub.split(/\s*[\u2014\u2013]\s*|\s+--\s+/).map(s=>s.trim()).filter(Boolean);
+    const lapsPart = parts.find(p=>/\d+\s*laps/i.test(p));
+    if(lapsPart){ const m = lapsPart.match(/(\d+)/); if(m) laps = Number(m[1]); }
+    if(parts[0] && parts[0] !== lapsPart) circuit = parts[0];
+    const condPart = parts.find(p=>p !== lapsPart && p !== circuit);
+    if(condPart) conditions = condPart;
+  }
+
+  const headings = [];
+  lines.forEach((line, li)=>{
+    const m = line.match(/^(#{1,3})\s+(.*)$/);
+    if(m) headings.push({ level: m[1].length, text: m[2].trim(), line: li });
+  });
+  function sectionLines(idx){
+    const start = headings[idx].line + 1;
+    const end = idx + 1 < headings.length ? headings[idx+1].line : lines.length;
+    return lines.slice(start, end);
+  }
+  function parseTable(blockLines){
+    const rows = blockLines.filter(l=>l.trim().startsWith("|"));
+    if(rows.length < 2) return [];
+    const cellsOf = (line)=> line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(c=>c.trim());
+    const header = cellsOf(rows[0]).map(h=>h.toLowerCase());
+    return rows.slice(2).map(r=>{
+      const cells = cellsOf(r);
+      const obj = {};
+      header.forEach((h, idx)=>{ obj[h] = cells[idx] !== undefined ? cells[idx] : ""; });
+      return obj;
+    });
+  }
+  function parseBullets(blockLines){
+    return blockLines.filter(l=>l.trim().startsWith("- ")).map(l=>l.trim().replace(/^-\s+/, ""));
+  }
+
+  let qualifying = [], results = [], raceLog = [];
+  headings.forEach((h, idx)=>{
+    const lower = h.text.toLowerCase();
+    if(lower.includes("qualifying")) qualifying = parseTable(sectionLines(idx));
+    else if(lower.includes("race result")) results = parseTable(sectionLines(idx));
+    else if(lower.includes("race log")) raceLog = parseBullets(sectionLines(idx));
+  });
+
+  return { title, circuit, laps, conditions, qualifying, results, raceLog };
 }
 function latestNumber(history){
   const withNum = (history||[]).filter(h=>h.number !== null && h.number !== undefined && h.number !== "").sort((a,b)=>b.year-a.year);
@@ -227,6 +328,7 @@ function renderApp(){
       <button class="vault-tab ${tab==='series'?'active':''}" data-tab="series">Series</button>
       <button class="vault-tab ${tab==='grid'?'active':''}" data-tab="grid">Season Grid</button>
       <button class="vault-tab ${tab==='results'?'active':''}" data-tab="results">Season Results</button>
+      <button class="vault-tab ${tab==='races'?'active':''}" data-tab="races">Races</button>
     </div>
     <div id="vaultTabBody"></div>
   `;
@@ -241,6 +343,12 @@ function renderApp(){
   else if(hash==="series") renderSeriesTab();
   else if(hash==="grid") renderGridTab();
   else if(hash==="results") renderResultsTab();
+  else if(hash==="races") renderRacesTab();
+  else if(hash==="races-scan") renderRaceScanForm();
+  else if(hash.startsWith("raceweekend-")){
+    const parts = hash.split("-");
+    renderRaceWeekendForm(Number(parts[1]), Number(parts[2]), Number(parts[3]));
+  }
   else renderDriversList();
 
   document.getElementById("vaultSaveBtn").hidden = !DIRTY;
@@ -960,6 +1068,405 @@ function renderResultsTab(){
   seriesSel.addEventListener("change", draw);
   document.getElementById("resultsShowNoncanon").addEventListener("change", draw);
   draw();
+}
+
+/* ---------- RACES tab: season list, grouped by round ----------
+   A round can have a "sprint" entry and/or a "race" entry \u2014 grouping by
+   (seriesId, year, round) is what bundles the two for display, since the
+   markdown files themselves look identical either way. */
+function renderRacesTab(){
+  const body = document.getElementById("vaultTabBody");
+  const years = [...new Set(STATE.races.map(r=>r.year))].sort((a,b)=>b-a);
+  const defaultSeries = STATE.series[0]?.id;
+  const defaultYear = years[0] || new Date().getFullYear();
+
+  body.innerHTML = `
+    <div class="vault-toolbar">
+      <select id="raceYear">${years.length ? years.map(y=>`<option value="${y}">${y}</option>`).join("") : `<option value="${defaultYear}">${defaultYear}</option>`}</select>
+      <select id="raceSeries">${STATE.series.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select>
+      <div class="spacer"></div>
+      <button class="btn-vault-secondary" id="addRaceManualBtn">+ Add manually</button>
+      <button class="btn-vault-add" id="scanRaceBtn">+ Scan race file</button>
+    </div>
+    <div class="vault-list" id="racesListBody"></div>
+  `;
+  const yearSel = document.getElementById("raceYear");
+  const seriesSel = document.getElementById("raceSeries");
+  yearSel.value = defaultYear;
+  seriesSel.value = defaultSeries;
+
+  document.getElementById("scanRaceBtn").addEventListener("click", ()=>{ location.hash = "races-scan"; });
+  document.getElementById("addRaceManualBtn").addEventListener("click", ()=>{
+    const seriesId = Number(seriesSel.value);
+    const year = Number(yearSel.value) || new Date().getFullYear();
+    const maxRound = Math.max(0, ...STATE.races.filter(r=>r.seriesId===seriesId && r.year===year).map(r=>r.round));
+    location.hash = `raceweekend-${seriesId}-${year}-${maxRound + 1}`;
+  });
+
+  function draw(){
+    const seriesId = Number(seriesSel.value);
+    const year = Number(yearSel.value);
+    const wrap = document.getElementById("racesListBody");
+    const inScope = STATE.races.filter(r=>r.seriesId===seriesId && r.year===year);
+    if(!inScope.length){ wrap.innerHTML = `<div class="vault-empty">No races on record for this season yet \u2014 scan a race file or add one manually.</div>`; return; }
+    const rounds = [...new Set(inScope.map(r=>r.round))].sort((a,b)=>a-b);
+    wrap.innerHTML = rounds.map(round=>{
+      const entries = inScope.filter(r=>r.round===round);
+      const race = entries.find(r=>r.kind==='race');
+      const sprint = entries.find(r=>r.kind==='sprint');
+      const name = (race && race.name) || (sprint && sprint.name) || "Untitled round";
+      const winner = race ? race.results.find(x=>String(x.position).trim()==="1") : null;
+      const metaParts = [];
+      if(race && race.circuit) metaParts.push(race.circuit);
+      if(winner) metaParts.push("Winner: " + (winner.driverName || "\u2014"));
+      return `<div class="race-weekend-card" data-series="${seriesId}" data-year="${year}" data-round="${round}">
+        <span class="rw-round">RD ${round}</span>
+        <span class="rw-name">${esc(name)}</span>
+        <span class="rw-meta">${esc(metaParts.join(" \u00b7 "))}</span>
+        <span class="rw-badges">
+          ${sprint ? `<span class="badge badge-sprint">sprint</span>` : ""}
+          ${race ? `<span class="badge badge-race">race</span>` : ""}
+        </span>
+      </div>`;
+    }).join("");
+    wrap.querySelectorAll(".race-weekend-card").forEach(card=>{
+      card.addEventListener("click", ()=>{
+        location.hash = `raceweekend-${card.dataset.series}-${card.dataset.year}-${card.dataset.round}`;
+      });
+    });
+  }
+  yearSel.addEventListener("change", draw);
+  seriesSel.addEventListener("change", draw);
+  draw();
+}
+
+/* ---------- RACES: scan / import form ---------- */
+let scanState = null; // holds the parsed file + auto-matches between Parse and Import
+
+function renderRaceScanForm(){
+  const body = document.getElementById("vaultTabBody");
+  scanState = null;
+  const years = [...new Set(STATE.races.map(r=>r.year))].sort((a,b)=>b-a);
+  const defaultSeries = STATE.series[0]?.id;
+  const defaultYear = years[0] || new Date().getFullYear();
+
+  body.innerHTML = `
+    <div class="vault-detail">
+      <div class="vault-detail-head">
+        <h2>Scan race file</h2>
+        <div class="vault-detail-actions"><button class="btn-vault-secondary" id="cancelScanBtn">Back</button></div>
+      </div>
+      <p style="color:var(--gray-light); font-size:14px; margin-bottom:16px;">
+        Paste the contents of a race markdown file, or upload it \u2014 a Qualifying Result table, a Race Result table, and
+        an optional Race Log. Sprint files use the exact same layout as a normal race; just mark this one as a Sprint
+        below so it bundles with its round's main race on the Races list.
+      </p>
+      <div class="vault-grid-form">
+        <div class="vault-field"><label>Series</label><select id="scanSeries">${STATE.series.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div>
+        <div class="vault-field"><label>Year</label><input type="number" id="scanYear" value="${defaultYear}"></div>
+        <div class="vault-field"><label>Round</label><input type="number" id="scanRound" value="1" min="1"></div>
+        <div class="vault-field">
+          <label>Session type</label>
+          <select id="scanKind"><option value="race">Race</option><option value="sprint">Sprint</option></select>
+        </div>
+      </div>
+      <div class="vault-field span2" style="margin-top:6px;">
+        <label>Markdown file</label>
+        <input type="file" id="scanFileInput" accept=".md,.markdown,.txt">
+      </div>
+      <div class="vault-field span2">
+        <label>Or paste markdown</label>
+        <textarea id="scanText" style="min-height:260px; font-family:var(--font-mono); font-size:12.5px;"></textarea>
+      </div>
+      <button type="button" class="btn-vault-add" id="scanParseBtn">Parse</button>
+      <div id="scanPreview"></div>
+    </div>
+  `;
+  document.getElementById("cancelScanBtn").addEventListener("click", ()=>{ location.hash = "races"; });
+  document.getElementById("scanSeries").value = defaultSeries;
+
+  document.getElementById("scanFileInput").addEventListener("change", (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{ document.getElementById("scanText").value = reader.result; };
+    reader.readAsText(file);
+  });
+
+  document.getElementById("scanParseBtn").addEventListener("click", ()=>{
+    const text = document.getElementById("scanText").value;
+    if(!text.trim()){ alert("Paste or upload a markdown file first."); return; }
+    const seriesId = Number(document.getElementById("scanSeries").value);
+    const parsed = parseRaceMarkdown(text);
+    if(!parsed.qualifying.length && !parsed.results.length){
+      alert("Couldn't find a Qualifying Result or Race Result table in that file \u2014 check the format and try again.");
+      return;
+    }
+    buildScanPreview(parsed, seriesId);
+  });
+}
+
+function buildScanPreview(parsed, seriesId){
+  const qualiRows = parsed.qualifying.map(row=>({
+    position: row['pos'] || '', driverRaw: (row['driver']||'').trim(), teamRaw: (row['team']||'').trim(),
+    time: row['time'] || '', gap: row['gap'] || ''
+  }));
+  const resultRows = parsed.results.map(row=>({
+    position: row['pos'] || '', driverRaw: (row['driver']||'').trim(), teamRaw: (row['team']||'').trim(),
+    grid: row['grid'] || '', timeGap: row['time/gap'] || row['time'] || '',
+    notes: row['traits / note'] || row['notes'] || row['note'] || ''
+  }));
+  const driverNames = [...new Set([...qualiRows, ...resultRows].map(r=>r.driverRaw).filter(Boolean))];
+  const teamNames = [...new Set([...qualiRows, ...resultRows].map(r=>r.teamRaw).filter(Boolean))];
+  const unmatchedDrivers = driverNames.filter(n=>!matchDriverByName(n));
+  const unmatchedTeams = teamNames.filter(n=>!matchTeamByName(n, seriesId));
+
+  scanState = { parsed, seriesId, qualiRows, resultRows };
+
+  const preview = document.getElementById("scanPreview");
+  preview.innerHTML = `
+    <div class="race-scan-preview">
+      <h3 style="font-family:var(--font-display); font-weight:800; font-size:17px; text-transform:uppercase; margin-bottom:10px;">${esc(parsed.title || "Untitled race")}</h3>
+      <div class="vault-hint" style="margin-bottom:14px; line-height:1.6;">
+        ${[parsed.circuit, parsed.laps ? parsed.laps + ' laps' : '', parsed.conditions].filter(Boolean).map(esc).join(" \u00b7 ")}<br>
+        ${qualiRows.length} qualifying rows \u00b7 ${resultRows.length} result rows${parsed.raceLog.length ? ' \u00b7 ' + parsed.raceLog.length + ' log lines' : ''}
+      </div>
+      ${(unmatchedDrivers.length || unmatchedTeams.length) ? `
+        <div class="vault-hint" style="color:var(--amber); margin-bottom:14px;">
+          Couldn't auto-match against your roster: ${[...unmatchedDrivers, ...unmatchedTeams].map(esc).join(", ")}.
+          They'll still import as plain text \u2014 you can fix or link them up on the round's edit page after saving.
+        </div>
+      ` : `<div class="vault-hint" style="color:#5ec26a; margin-bottom:14px;">Every driver and team name matched your roster.</div>`}
+      <button type="button" class="btn-vault-add" id="scanSaveBtn">Import race</button>
+    </div>
+  `;
+  document.getElementById("scanSaveBtn").addEventListener("click", saveScannedRace);
+}
+
+function saveScannedRace(){
+  const seriesId = Number(document.getElementById("scanSeries").value);
+  const year = Number(document.getElementById("scanYear").value);
+  const round = Number(document.getElementById("scanRound").value);
+  const kind = document.getElementById("scanKind").value;
+  if(!year || !round){ alert("Year and round are required."); return; }
+  const { parsed, qualiRows, resultRows } = scanState;
+
+  const buildEntry = (r, driverKey, extra) => {
+    const dm = matchDriverByName(r[driverKey]);
+    const tm = matchTeamByName(r.teamRaw, seriesId);
+    return {
+      position: r.position,
+      driverId: dm ? dm.id : null, driverName: dm ? dm.name : r[driverKey],
+      teamId: tm ? tm.id : null, teamName: tm ? tm.name : r.teamRaw,
+      ...extra
+    };
+  };
+
+  const race = {
+    id: nextId(STATE.races),
+    seriesId, year, round, kind,
+    name: parsed.title || "Untitled race",
+    circuit: parsed.circuit || "",
+    laps: parsed.laps || null,
+    conditions: parsed.conditions || "",
+    qualifying: qualiRows.map(r=>buildEntry(r, 'driverRaw', { time: r.time, gap: r.gap })),
+    results: resultRows.map(r=>buildEntry(r, 'driverRaw', { grid: r.grid, timeGap: r.timeGap, notes: r.notes })),
+    raceLog: parsed.raceLog
+  };
+  STATE.races.push(race);
+  markDirty();
+  scanState = null;
+  location.hash = `raceweekend-${seriesId}-${year}-${round}`;
+}
+
+/* ---------- RACES: round editor (bundles sprint + race) ---------- */
+function renderRaceWeekendForm(seriesId, year, round){
+  if(!seriesId || !year || !round){ location.hash = "races"; return; }
+  const body = document.getElementById("vaultTabBody");
+  const race = STATE.races.find(r=>r.seriesId===seriesId && r.year===year && r.round===round && r.kind==='race');
+  const sprint = STATE.races.find(r=>r.seriesId===seriesId && r.year===year && r.round===round && r.kind==='sprint');
+
+  const driverNamesList = [...STATE.drivers].sort((a,b)=>a.name.localeCompare(b.name)).map(d=>`<option value="${esc(d.name)}">`).join("");
+  const teamNamesList = STATE.teams.filter(t=>teamSeriesIds(t).includes(seriesId)).sort((a,b)=>a.name.localeCompare(b.name)).map(t=>`<option value="${esc(t.name)}">`).join("");
+
+  const qualiRowHtml = (r, i) => `
+    <div class="race-table-row race-quali-row" data-idx="${i}">
+      <input type="text" class="rq-pos" value="${esc(r.position||'')}" placeholder="Pos">
+      <input type="text" class="rq-driver" list="raceDriverNames" value="${esc(r.driverName||'')}" placeholder="Driver">
+      <input type="text" class="rq-team" list="raceTeamNames" value="${esc(r.teamName||'')}" placeholder="Team">
+      <input type="text" class="rq-time" value="${esc(r.time||'')}" placeholder="Time">
+      <input type="text" class="rq-gap" value="${esc(r.gap||'')}" placeholder="Gap">
+      <button type="button" class="btn-remove-row" data-remove-quali="${i}">&times;</button>
+    </div>`;
+  const resultRowHtml = (r, i) => `
+    <div class="race-table-row race-result-row" data-idx="${i}">
+      <input type="text" class="rr-pos" value="${esc(r.position||'')}" placeholder="Pos">
+      <input type="text" class="rr-driver" list="raceDriverNames" value="${esc(r.driverName||'')}" placeholder="Driver">
+      <input type="text" class="rr-team" list="raceTeamNames" value="${esc(r.teamName||'')}" placeholder="Team">
+      <input type="text" class="rr-grid" value="${esc(r.grid||'')}" placeholder="Grid">
+      <input type="text" class="rr-timegap" value="${esc(r.timeGap||'')}" placeholder="Time/Gap">
+      <input type="text" class="rr-notes" value="${esc(r.notes||'')}" placeholder="Notes">
+      <button type="button" class="btn-remove-row" data-remove-result="${i}">&times;</button>
+    </div>`;
+
+  const sessionBlock = (entry, kind, label) => {
+    if(!entry){
+      return `<div class="race-session-block">
+        <div class="race-session-head"><h3>${label}</h3></div>
+        <button type="button" class="btn-add-row add-session-btn" data-kind="${kind}">+ Add ${label.toLowerCase()} results</button>
+      </div>`;
+    }
+    return `<div class="race-session-block" data-kind="${kind}">
+      <div class="race-session-head">
+        <h3>${label}</h3>
+        <button type="button" class="btn-vault-secondary btn-vault-danger delete-session-btn" data-kind="${kind}">Delete ${label.toLowerCase()}</button>
+      </div>
+      <div class="vault-grid-form">
+        <div class="vault-field span2"><label>Name</label><input type="text" class="sess-name" value="${esc(entry.name||'')}"></div>
+        <div class="vault-field"><label>Circuit</label><input type="text" class="sess-circuit" value="${esc(entry.circuit||'')}"></div>
+        <div class="vault-field"><label>Laps</label><input type="number" class="sess-laps" value="${entry.laps ?? ''}"></div>
+        <div class="vault-field span2"><label>Conditions</label><input type="text" class="sess-conditions" value="${esc(entry.conditions||'')}"></div>
+      </div>
+      <div class="vault-field">
+        <label>Qualifying</label>
+        <div class="race-table">
+          <div class="race-table-row head race-quali-row"><span>Pos</span><span>Driver</span><span>Team</span><span>Time</span><span>Gap</span><span></span></div>
+          <div class="quali-rows">${entry.qualifying.map(qualiRowHtml).join("")}</div>
+        </div>
+        <button type="button" class="btn-add-row add-quali-row" style="margin-top:8px;">+ Add qualifying row</button>
+      </div>
+      <div class="vault-field">
+        <label>Race result</label>
+        <div class="race-table">
+          <div class="race-table-row head race-result-row"><span>Pos</span><span>Driver</span><span>Team</span><span>Grid</span><span>Time/Gap</span><span>Notes</span><span></span></div>
+          <div class="result-rows">${entry.results.map(resultRowHtml).join("")}</div>
+        </div>
+        <button type="button" class="btn-add-row add-result-row" style="margin-top:8px;">+ Add result row</button>
+      </div>
+      <div class="vault-field span2">
+        <label>Race log (one entry per line)</label>
+        <textarea class="sess-log" style="min-height:120px; font-family:var(--font-mono); font-size:12.5px;">${esc((entry.raceLog||[]).join("\n"))}</textarea>
+      </div>
+    </div>`;
+  };
+
+  body.innerHTML = `
+    <datalist id="raceDriverNames">${driverNamesList}</datalist>
+    <datalist id="raceTeamNames">${teamNamesList}</datalist>
+    <div class="vault-detail">
+      <div class="vault-detail-head">
+        <h2>Round ${round} <span class="current-number">${esc(currentSeriesName(seriesId))} \u00b7 ${year}</span></h2>
+        <div class="vault-detail-actions">
+          <button class="btn-vault-secondary btn-vault-danger" id="deleteWeekendBtn">Delete round</button>
+          <button class="btn-vault-secondary" id="cancelWeekendBtn">Back</button>
+        </div>
+      </div>
+      ${sessionBlock(sprint, 'sprint', 'Sprint')}
+      ${sessionBlock(race, 'race', 'Race')}
+      <div style="margin-top:24px;"><button type="button" class="btn-vault-add" id="saveWeekendBtn">Save round</button></div>
+    </div>
+  `;
+
+  document.getElementById("cancelWeekendBtn").addEventListener("click", ()=>{ location.hash = "races"; });
+  document.getElementById("deleteWeekendBtn").addEventListener("click", ()=>{
+    if(!confirm(`Delete round ${round} entirely \u2014 sprint and race both? This can't be undone until you Save.`)) return;
+    STATE.races = STATE.races.filter(r=>!(r.seriesId===seriesId && r.year===year && r.round===round));
+    markDirty();
+    location.hash = "races";
+  });
+  body.querySelectorAll(".delete-session-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const kind = btn.dataset.kind;
+      if(!confirm(`Delete the ${kind}? This can't be undone until you Save.`)) return;
+      STATE.races = STATE.races.filter(r=>!(r.seriesId===seriesId && r.year===year && r.round===round && r.kind===kind));
+      markDirty();
+      renderRaceWeekendForm(seriesId, year, round);
+    });
+  });
+  body.querySelectorAll(".add-session-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const kind = btn.dataset.kind;
+      STATE.races.push({ id: nextId(STATE.races), seriesId, year, round, kind, name:"", circuit:"", laps:null, conditions:"", qualifying:[], results:[], raceLog:[] });
+      markDirty();
+      renderRaceWeekendForm(seriesId, year, round);
+    });
+  });
+  body.querySelectorAll(".add-quali-row").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const kind = btn.closest(".race-session-block").dataset.kind;
+      const entry = kind==='race' ? race : sprint;
+      entry.qualifying.push({ position:"", driverId:null, driverName:"", teamId:null, teamName:"", time:"", gap:"" });
+      markDirty();
+      renderRaceWeekendForm(seriesId, year, round);
+    });
+  });
+  body.querySelectorAll(".add-result-row").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const kind = btn.closest(".race-session-block").dataset.kind;
+      const entry = kind==='race' ? race : sprint;
+      entry.results.push({ position:"", driverId:null, driverName:"", teamId:null, teamName:"", grid:"", timeGap:"", notes:"" });
+      markDirty();
+      renderRaceWeekendForm(seriesId, year, round);
+    });
+  });
+  body.querySelectorAll("[data-remove-quali]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const kind = btn.closest(".race-session-block").dataset.kind;
+      const entry = kind==='race' ? race : sprint;
+      entry.qualifying.splice(Number(btn.dataset.removeQuali), 1);
+      markDirty();
+      renderRaceWeekendForm(seriesId, year, round);
+    });
+  });
+  body.querySelectorAll("[data-remove-result]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const kind = btn.closest(".race-session-block").dataset.kind;
+      const entry = kind==='race' ? race : sprint;
+      entry.results.splice(Number(btn.dataset.removeResult), 1);
+      markDirty();
+      renderRaceWeekendForm(seriesId, year, round);
+    });
+  });
+
+  document.getElementById("saveWeekendBtn").addEventListener("click", ()=>{
+    [['race', race], ['sprint', sprint]].forEach(([kind, entry])=>{
+      if(!entry) return;
+      const block = body.querySelector(`.race-session-block[data-kind="${kind}"]`);
+      if(!block) return;
+      entry.name = block.querySelector(".sess-name").value.trim();
+      entry.circuit = block.querySelector(".sess-circuit").value.trim();
+      entry.laps = block.querySelector(".sess-laps").value ? Number(block.querySelector(".sess-laps").value) : null;
+      entry.conditions = block.querySelector(".sess-conditions").value.trim();
+      entry.qualifying = [...block.querySelectorAll(".quali-rows .race-quali-row")].map(row=>{
+        const driverName = row.querySelector(".rq-driver").value.trim();
+        const teamName = row.querySelector(".rq-team").value.trim();
+        const dm = matchDriverByName(driverName), tm = matchTeamByName(teamName, seriesId);
+        return {
+          position: row.querySelector(".rq-pos").value.trim(),
+          driverId: dm ? dm.id : null, driverName,
+          teamId: tm ? tm.id : null, teamName,
+          time: row.querySelector(".rq-time").value.trim(),
+          gap: row.querySelector(".rq-gap").value.trim()
+        };
+      });
+      entry.results = [...block.querySelectorAll(".result-rows .race-result-row")].map(row=>{
+        const driverName = row.querySelector(".rr-driver").value.trim();
+        const teamName = row.querySelector(".rr-team").value.trim();
+        const dm = matchDriverByName(driverName), tm = matchTeamByName(teamName, seriesId);
+        return {
+          position: row.querySelector(".rr-pos").value.trim(),
+          driverId: dm ? dm.id : null, driverName,
+          teamId: tm ? tm.id : null, teamName,
+          grid: row.querySelector(".rr-grid").value.trim(),
+          timeGap: row.querySelector(".rr-timegap").value.trim(),
+          notes: row.querySelector(".rr-notes").value.trim()
+        };
+      });
+      entry.raceLog = block.querySelector(".sess-log").value.split("\n").map(l=>l.trim()).filter(Boolean);
+    });
+    markDirty();
+    location.hash = "races";
+  });
 }
 
 /* ---------- settings panel (reachable any time via the header gear) ---------- */

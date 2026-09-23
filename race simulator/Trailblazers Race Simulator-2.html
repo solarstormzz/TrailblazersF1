@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>F1 Race Simulator</title>
+<style>
+:root{
+  --bg:#f4f5f7; --panel:#fff; --text:#1a1c22; --sub:#5b616e; --line:#e1e3e8;
+  --accent:#c8102e; --accent2:#0b3d91;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --bg:#14151a; --panel:#1d1f26; --text:#eceef2; --sub:#9aa0ac; --line:#2c2f38; }
+}
+:root[data-theme="dark"]{ --bg:#14151a; --panel:#1d1f26; --text:#eceef2; --sub:#9aa0ac; --line:#2c2f38; }
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:20px 16px 60px}
+h1{font-size:1.4rem;margin:0 0 2px}
+.sub{color:var(--sub);font-size:.85rem;margin-bottom:18px}
+h2{font-size:1rem;margin:0 0 10px;border-left:4px solid var(--accent);padding-left:8px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+label{font-size:.68rem;color:var(--sub);display:block;margin-bottom:2px}
+input,select,textarea{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:.85rem}
+select[multiple]{height:auto}
+.team{margin-bottom:14px;border:1px solid var(--line);border-radius:8px;padding:10px}
+.tname{font-weight:700;font-size:.95rem;margin-bottom:6px}
+.teamstats{display:grid;grid-template-columns:1.6fr repeat(5,.8fr);gap:6px;margin-bottom:10px;align-items:end}
+.driver{border-top:1px dashed var(--line);padding-top:8px;margin-top:8px}
+.drow{display:grid;grid-template-columns:1.2fr .6fr .6fr .6fr .6fr .6fr 1fr;gap:6px;align-items:end}
+.drow2{display:grid;grid-template-columns:1.4fr 1fr;gap:6px;margin-top:6px}
+table{width:100%;border-collapse:collapse;font-size:.8rem}
+th,td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)}
+th{color:var(--sub);font-weight:600;font-size:.7rem;text-transform:uppercase}
+tr.dnf td{color:var(--accent);opacity:.85}
+.wrap{overflow-x:auto}
+button{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:.9rem;font-weight:600;cursor:pointer}
+button.sec{background:var(--accent2)}
+button.nav{padding:8px 12px}
+.btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;align-items:center}
+.badge{display:inline-block;font-size:.66rem;padding:2px 6px;border-radius:4px;background:var(--accent2);color:#fff;margin-left:6px}
+.log{font-size:.78rem;color:var(--sub);line-height:1.55}
+.pos{font-weight:700;width:28px;display:inline-block}
+details summary{cursor:pointer;font-size:.85rem;color:var(--accent2);margin-bottom:6px}
+.hint{font-size:.68rem;color:var(--sub);margin-top:2px}
+.raceHead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.raceHead .info{flex:1;min-width:200px}
+.gpname{font-weight:700;font-size:1.1rem}
+.circuitname{color:var(--sub);font-size:.85rem}
+.stats3{display:flex;gap:14px;font-size:.72rem;color:var(--sub);margin-top:4px;flex-wrap:wrap}
+.traitPicker{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;padding:4px 10px;border:1px solid var(--line);border-radius:14px;font-size:.7rem;cursor:pointer;user-select:none;background:var(--bg);color:var(--text);transition:background .1s,color .1s}
+.chip.sel{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chip.disabled{opacity:.35;cursor:not-allowed}
+.traitCount{font-size:.66rem;color:var(--sub);margin:6px 0 4px;text-transform:uppercase;letter-spacing:.03em}
+.traitGroup:first-child .traitCount{margin-top:0}
+</style>
+</head>
+<body>
+<h1>🏁 F1 Race Weekend Simulator</h1>
+<div class="sub">Team stats set the car; driver stats and traits decide who capitalises on it.</div>
+ 
+<div class="panel">
+  <h2>Weekend setup</h2>
+  <div class="raceHead">
+    <button class="nav sec" id="prevRace" type="button">◀</button>
+    <div class="info">
+      <div class="gpname" id="gpName"></div>
+      <div class="circuitname" id="circuitName"></div>
+      <div class="stats3">
+        <span id="lapsInfo"></span><span id="scInfo"></span><span id="vscInfo"></span><span id="rfInfo"></span>
+      </div>
+    </div>
+    <button class="nav sec" id="nextRace" type="button">▶</button>
+  </div>
+  <div class="grid" style="margin-top:10px">
+    <div><label>Jump to race</label><select id="circuitSelect"></select></div>
+    <div><label>Conditions</label>
+      <select id="weather"><option value="dry">Dry</option><option value="wet">Wet</option><option value="mixed">Mixed (changeable)</option></select>
+    </div>
+  </div>
+</div>
+ 
+<div class="panel">
+  <h2>Roster <span class="badge" id="rosterCount"></span></h2>
+  <div class="hint">Pick up to 2 buffs, 2 debuffs, and 2 temporary traits per driver.</div>
+  <div id="rosterBox" style="margin-top:10px"></div>
+  <div class="btnrow">
+    <button class="sec" id="saveRoster" type="button">Save roster</button>
+    <button class="sec" id="resetRoster" type="button">Reset to defaults</button>
+  </div>
+</div>
+ 
+<div class="btnrow">
+  <button id="runQuali" type="button">Simulate Qualifying</button>
+  <button id="runRace" type="button" disabled>Simulate Race</button>
+</div>
+ 
+<div class="panel" id="qualiPanel" style="display:none">
+  <h2>Qualifying Result</h2>
+  <div class="wrap"><table id="qualiTable"></table></div>
+</div>
+ 
+<div class="panel" id="racePanel" style="display:none">
+  <h2 id="raceTitle">Race Result</h2>
+  <div class="wrap"><table id="raceTable"></table></div>
+  <details style="margin-top:10px"><summary>Race log (pit stops, battles, incidents, safety car / VSC / red flag)</summary><div class="log" id="raceLog"></div></details>
+  <div class="btnrow">
+    <button class="sec" id="exportMd" type="button">Export results (.md)</button>
+  </div>
+</div>
+ 
+<script>
+const NUDGES = {"-8":"Poor weekend","-4":"Below par","0":"Normal","4":"Strong","8":"Exceptional"};
+const TSTATS=["speed","reliability","handling","strategy","pitcrew"];
+const DSTATS=["pace","overtaking","defense","risk","consistency"];
+const TRAIT_CATS={
+  buff:["Strategist","Wet Weather Racer","Aggressive","Calculated","Late Breaker","W2W Master","Ballerina","Tyre Whisperer","Fuel Saver","Minister of Defense","No Fear of Dirty Air","Active Aero Athlete","GOAT","Driver Mechanic","Comeback Kid","Restart Specialist", "Last Lap Push","Qualifying Specialist","Great Starter", "Cool Under Pressure"],
+  debuff:["On Edge","Tyre Eater","Elbows Out","Washed","Crash-Happy","Fair-Weather Flyer","No Challenge to Pass","Paper Champion","Bottler","Restart Blunderer", "Slow Starter","Pit Lane Speedster","Aquaplaner","Qualifying Nerves","Can't Keep In The Lines","Empty Tank","Dirty Air Sufferer","Stuck In Traffic","Reliability Nightmare"],
+  temporary:["Hometown Hero","Home Race Curse","Injured"]
+};
+const CAT_LABELS={buff:"Buffs",debuff:"Debuffs",temporary:"Temporary"};
+const CAT_MAX=2;
+const TRAIT_CAT_OF={};
+Object.entries(TRAIT_CATS).forEach(([cat,list])=>list.forEach(t=>TRAIT_CAT_OF[t]=cat));
+const TRAITS=[...TRAIT_CATS.buff,...TRAIT_CATS.debuff,...TRAIT_CATS.temporary];
+const TRAIT_FX={
+  "strategist":{pitLossMult:-0.15},
+  "wet weather racer":{wetBonus:8},
+  "aggressive":{atkMult:0.4,riskAdj:10,incMult:0.25},
+  "calculated":{noiseMult:-0.3,riskAdj:-8,incMult:-0.2},
+  "late breaker":{ovBonus:8,incMult:0.15},
+  "last lap push":{lastLapBonus:6},
+  "on edge":{noiseMult:0.4,incMult:0.2,atkMult:0.2},
+  "w2w master":{ovBonus:6,defBonus:6},
+  "ballerina":{handlingIncMult:-0.4},
+  "tyre whisperer":{degMult:-0.35},
+  "tyre eater":{degMult:0.35,paceEarly:2},
+  "fuel saver":{mechMult:-0.15,pitLossMult:-0.05},
+  "qualifying specialist":{qualiBonus:6},
+  "great starter":{lap1Bonus:5},
+  "slow starter":{lap1Bonus:-6},
+  "cool under pressure":{neutralIncMult:-0.4},
+  "elbows out":{atkMult:0.5,riskAdj:12,ovBonus:5,defBonus:5,incMult:0.5},
+  "washed":{qualiBonus:-5,ovBonus:-6,defBonus:-4,noiseMult:0.35,degMult:0.15,lastLapBonus:-5},
+  "crash-happy":{incMult:0.6,handlingIncMult:0.35},
+  "goat":{qualiBonus:4,ovBonus:4,defBonus:4,lastLapBonus:3,noiseMult:-0.15,incMult:-0.1,degMult:-0.1},
+  "fair-weather flyer":{wetBonus:-8},
+  "minister of defense":{defBonus:9,noiseMult:-0.1},
+  "no challenge to pass":{defBonus:-10,incMult:-0.15},
+  "no fear of dirty air":{atkMult:0.25,ovBonus:5,noiseMult:-0.1},
+  "active aero athlete":{handlingIncMult:-0.3,degMult:-0.1},
+  "hometown hero":{qualiBonus:5,ovBonus:5,defBonus:5,noiseMult:-0.15},
+  "home race curse":{qualiBonus:-5,ovBonus:-5,defBonus:-3,noiseMult:0.25,incMult:0.15},
+  "injured":{qualiBonus:-6,noiseMult:0.3,handlingIncMult:0.25,lastLapBonus:-6},
+  "driver mechanic":{handlingIncMult:-0.3,mechMult:-0.3},
+  "paper champion":{qualiBonus:6,ovBonus:-5,defBonus:-5,noiseMult:0.25},
+  "bottler":{poleLap1Penalty:8,poleHandlingMult:0.5},
+  "comeback kid":{backfieldPaceBonus:3,backfieldOvBonus:6},
+  "restart specialist":{restartPaceBonus:3,restartOvBonus:8},
+  "restart blunderer":{restartHandlingMult:0.35,restartIncMult:0.4},
+  "pit lane speedster":{pitLossMult:0.25},
+  "aquaplaner":{wetBonus:-6,incMult:0.2},
+  "qualifying nerves":{qualiBonus:-4,noiseMult:0.2},
+  "can't keep in the lines":{incMult:0.2,riskAdj:5},
+  "empty tank":{lastLapBonus:-6},
+  "dirty air sufferer":{atkMult:-0.2,ovBonus:-5,noiseMult:0.1},
+  "stuck in traffic":{backfieldPaceBonus:-3,backfieldOvBonus:-6},
+  "reliability nightmare":{mechMult:0.2}
+};
+// gp, circuit, laps, sc, vsc, rf (all as total-race probabilities)
+const CIRCUITS=[
+ {gp:"Australian Grand Prix",circuit:"Albert Park Circuit",laps:58,sc:.67,vsc:.67,rf:.06},
+ {gp:"Chinese Grand Prix",circuit:"Shanghai International Circuit",laps:56,sc:.50,vsc:.50,rf:.04},
+ {gp:"Japanese Grand Prix",circuit:"Suzuka Circuit",laps:53,sc:.50,vsc:.33,rf:.03},
+ {gp:"Bahrain Grand Prix",circuit:"Bahrain International Circuit",laps:57,sc:.63,vsc:.50,rf:.03},
+ {gp:"Saudi Arabian Grand Prix",circuit:"Jeddah Corniche Circuit",laps:50,sc:.100,vsc:.50,rf:.08},
+ {gp:"Miami Grand Prix",circuit:"Miami International Autodrome",laps:57,sc:.50,vsc:.75,rf:.05},
+ {gp:"Gran Premio dell'Emilia-Romagna",circuit:"Autodromo Enzo e Dino Ferrari, Imola",laps:63,sc:.75,vsc:.25,rf:.04},
+ {gp:"Grand Prix de Monaco",circuit:"Circuit de Monaco",laps:78,sc:.29,vsc:.43,rf:.07},
+ {gp:"Canadian Grand Prix",circuit:"Circuit Gilles Villeneuve",laps:70,sc:.83,vsc:.33,rf:.06},
+ {gp:"Gran Premio de España",circuit:"Circuit de Barcelona-Catalunya",laps:66,sc:.50,vsc:.13,rf:.03},
+ {gp:"Großer Preis von Österreich",circuit:"Red Bull Ring",laps:71,sc:.50,vsc:.40,rf:.04},
+ {gp:"British Grand Prix",circuit:"Silverstone Circuit",laps:52,sc:.78,vsc:.22,rf:.05},
+ {gp:"Grand Prix de Belgique",circuit:"Circuit de Spa-Francorchamps",laps:44,sc:.50,vsc:.01,rf:.09},
+ {gp:"Magyar Nagydíj",circuit:"Hungaroring",laps:70,sc:.13,vsc:.25,rf:.03},
+ {gp:"Dutch Grand Prix",circuit:"Circuit Zandvoort",laps:72,sc:.60,vsc:.60,rf:.05},
+ {gp:"Gran Premio d'Italia",circuit:"Autodromo Nazionale Monza",laps:53,sc:.50,vsc:.38,rf:.03},
+ {gp:"Azerbaijan Grand Prix",circuit:"Baku City Circuit",laps:51,sc:.57,vsc:.43,rf:.07},
+ {gp:"Singapore Grand Prix",circuit:"Marina Bay Street Circuit",laps:62,sc:.83,vsc:.33,rf:.07},
+ {gp:"United States Grand Prix",circuit:"Circuit of the Americas",laps:56,sc:.29,vsc:.29,rf:.04},
+ {gp:"Gran Premio de la Ciudad de México",circuit:"Autódromo Hermanos Rodríguez",laps:71,sc:.43,vsc:.71,rf:.04},
+ {gp:"Grande Prêmio de São Paulo",circuit:"Autódromo José Carlos Pace, Interlagos",laps:71,sc:.86,vsc:.43,rf:.08},
+ {gp:"Las Vegas Grand Prix",circuit:"Las Vegas Strip Circuit",laps:50,sc:.50,vsc:.50,rf:.05},
+ {gp:"Qatar Grand Prix",circuit:"Lusail International Circuit",laps:57,sc:.67,vsc:.67,rf:.04},
+ {gp:"Abu Dhabi Grand Prix",circuit:"Yas Marina Circuit",laps:58,sc:.38,vsc:.50,rf:.03}
+];
+let raceIdx=0;
+ 
+const DEFAULT_TEAMS=[
+ {name:"Kinghorn",speed:70,reliability:90,handling:86,strategy:62,pitcrew:88,drivers:[
+   {name:"Alexander Everill",pace:88,overtaking:82,defense:76,risk:70,consistency:86,traits:["W2W Master", "Goat"]},
+   {name:"Oskar Hajek",pace:66,overtaking:72,defense:50,risk:65,consistency:50,traits:["Last Lap Push", "Elbows Out"]}]},
+
+ {name:"Cavalla Nera",speed:99,reliability:71,handling:34,strategy:66,pitcrew:89,drivers:[
+   {name:"Callum Sykes",pace:90,overtaking:84,defense:78,risk:65,consistency:90,traits:["Calculated", "Late Breaker", "Tyre Eater"]},
+   {name:"Owen Newman",pace:78,overtaking:64,defense:42,risk:32,consistency:82,traits:["Great Starter", "Tyre Eater"]}]},
+
+ {name:"Refresh",speed:91,reliability:87,handling:73,strategy:59,pitcrew:74,drivers:[
+   {name:"Leon Radvan",pace:84,overtaking:88,defense:66,risk:99,consistency:60,traits:["Aggressive", "No Fear of Dirty Air", "On Edge"]},
+   {name:"Niko Koskimies",pace:44,overtaking:50,defense:69,risk:30,consistency:78,traits:["Ballerina", "Washed", "No Challenge to Pass"]}]},
+
+ {name:"MerQury",speed:74,reliability:69,handling:85,strategy:63,pitcrew:69,drivers:[
+   {name:"Julian Carmichael",pace:73,overtaking:80,defense:64,risk:95,consistency:88,traits:["Strategist", "Driver Mechanic"]},
+   {name:"Ian Mallory",pace:73,overtaking:69,defense:78,risk:80,consistency:57,traits:["Minister of Defense", "Tyre Whisperer", "Restart Blunderer"]}]},
+
+ {name:"Frecciata di Altera",speed:64,reliability:83,handling:71,strategy:37,pitcrew:63,drivers:[
+   {name:"Magnus Osterrhein",pace:51,overtaking:66,defense:55,risk:80,consistency:69,traits:["Active Aero Athlete", "Slow Starter"]},
+   {name:"Matthew Cox",pace:62,overtaking:78,defense:67,risk:48,consistency:76,traits:["Cool Under Pressure", "Bottler"]}]},
+
+ {name:"Faucon",speed:59,reliability:51,handling:70,strategy:64,pitcrew:70,drivers:[
+   {name:"Gerrit Van Dijk",pace:50,overtaking:79,defense:93,risk:68,consistency:55,traits:["Calculated", "W2W Master", "Pit Lane Speedster"]},
+   {name:"Georgio Adlington",pace:51,overtaking:87,defense:56,risk:72,consistency:45,traits:["Fuel Saver", "Paper Champion"]}]},
+
+ {name:"ACXS",speed:63,reliability:50,handling:65,strategy:58,pitcrew:79,drivers:[
+   {name:"Santiago de Ruiz",pace:90,overtaking:64,defense:52,risk:82,consistency:30,traits:["Late Breaker", "Elbows Out", "Can't Keep in the Lines"]},
+   {name:"Martin Courtois",pace:40,overtaking:50,defense:80,risk:47,consistency:60,traits:["Fuel Saver", "Fair-Weather Flyer"]}]},
+
+ {name:"Equin",speed:49,reliability:68,handling:57,strategy:66,pitcrew:77,drivers:[
+   {name:"Jinwoo Han",pace:97,overtaking:72,defense:50,risk:58,consistency:42,traits:["Aggressive", "On Edge"]},
+   {name:"Rafael Silveira",pace:69,overtaking:85,defense:44,risk:90,consistency:63,traits:["Wet Weather Racer", "Tyre Eater"]}]},
+
+ {name:"Atlas Petrol",speed:54,reliability:25,handling:55,strategy:52,pitcrew:63,drivers:[
+   {name:"Niklas Mohrbacher",pace:77,overtaking:52,defense:50,risk:68,consistency:62,traits:["Minister of Defense", "Crash-Happy"]},
+   {name:"Eero Lindvee",pace:39,overtaking:45,defense:74,risk:60,consistency:23,traits:["Washed", "Reliability Nightmare", "Ballerina"]}]},
+
+ {name:"Leonides",speed:38,reliability:48,handling:59,strategy:24,pitcrew:41,drivers:[
+   {name:"Antoine Gilbert",pace:67,overtaking:62,defense:70,risk:78,consistency:82,traits:["Cool Under Pressure", "No Fear of Dirty Air", "Slow Starter"]},
+   {name:"Nicola Cherubini",pace:49,overtaking:35,defense:84,risk:60,consistency:33,traits:["Comeback Kid", "Qualifying Nerves"]}]}
+];
+let roster=[];
+ 
+function cloneDefaults(){ return DEFAULT_TEAMS.map(t=>({...t,drivers:t.drivers.map(d=>({...d,traits:[...d.traits],nudge:0,note:""}))})); }
+function loadRoster(){
+  try{ const s=localStorage.getItem("tb_roster3"); if(s){ roster=JSON.parse(s); return; } }catch(e){}
+  roster=cloneDefaults();
+}
+function saveRoster(){ try{ localStorage.setItem("tb_roster3",JSON.stringify(roster)); }catch(e){} }
+ 
+function renderRoster(){
+  const box=document.getElementById("rosterBox"); box.innerHTML="";
+  roster.forEach((team,ti)=>{
+    const div=document.createElement("div"); div.className="team";
+    div.innerHTML=`<div class="tname"><input data-ti="${ti}" data-f="tname" value="${team.name}" style="font-weight:700"></div>
+      <div class="teamstats">
+        <div></div>
+        ${TSTATS.map(s=>`<div><label>${s[0].toUpperCase()+s.slice(1)}</label><input type="number" min="1" max="100" data-ti="${ti}" data-f="${s}" value="${team[s]}"></div>`).join("")}
+      </div>`;
+    team.drivers.forEach((d,di)=>{
+      const drv=document.createElement("div"); drv.className="driver";
+      drv.innerHTML=`
+        <div class="drow">
+          <div><label>Driver</label><input data-ti="${ti}" data-di="${di}" data-f="name" value="${d.name}"></div>
+          ${DSTATS.map(s=>`<div><label>${s[0].toUpperCase()+s.slice(1)}</label><input type="number" min="1" max="100" data-ti="${ti}" data-di="${di}" data-f="${s}" value="${d[s]}"></div>`).join("")}
+          <div><label>Weekend call</label>
+            <select data-ti="${ti}" data-di="${di}" data-f="nudge">
+              ${Object.entries(NUDGES).map(([v,l])=>`<option value="${v}" ${+v===d.nudge?"selected":""}>${l}</option>`).join("")}
+            </select>
+          </div>
+        </div>
+        <div class="drow2">
+          <div><label>Traits</label>
+            <div class="traitHolder" data-ti="${ti}" data-di="${di}">${traitPickerInner(d.traits)}</div>
+          </div>
+          <div><label>Note (flavour)</label><input data-ti="${ti}" data-di="${di}" data-f="note" value="${d.note||""}"></div>
+        </div>`;
+      div.appendChild(drv);
+    });
+    box.appendChild(div);
+  });
+  box.querySelectorAll("[data-f]").forEach(el=>{
+    el.addEventListener("change",()=>{
+      const ti=+el.dataset.ti, f=el.dataset.f;
+      if(f==="tname"){ roster[ti].name=el.value; return; }
+      const di=+el.dataset.di, target=roster[ti].drivers[di];
+      target[f]=(f==="name"||f==="note")?el.value:+el.value;
+    });
+  });
+  box.querySelectorAll(".traitHolder").forEach(wireTraitHolder);
+  document.getElementById("rosterCount").textContent=roster.reduce((n,t)=>n+t.drivers.length,0)+" drivers, "+roster.length+" teams";
+}
+ 
+function traitPickerInner(selected){
+  return Object.entries(TRAIT_CATS).map(([cat,list])=>{
+    const count=selected.filter(t=>TRAIT_CAT_OF[t]===cat).length;
+    const full=count>=CAT_MAX;
+    const chips=list.map(t=>{
+      const sel=selected.includes(t);
+      const cls=["chip", sel?"sel":"", (!sel&&full)?"disabled":""].filter(Boolean).join(" ");
+      return `<span class="${cls}" data-t="${t}">${t}</span>`;
+    }).join("");
+    return `<div class="traitGroup"><div class="traitCount">${CAT_LABELS[cat]} — ${count}/${CAT_MAX}</div><div class="traitPicker">${chips}</div></div>`;
+  }).join("");
+}
+function wireTraitHolder(holder){
+  const ti=+holder.dataset.ti, di=+holder.dataset.di;
+  holder.querySelectorAll(".chip").forEach(chip=>{
+    chip.addEventListener("click",()=>{
+      const target=roster[ti].drivers[di], t=chip.dataset.t, cat=TRAIT_CAT_OF[t];
+      const idx=target.traits.indexOf(t);
+      if(idx>-1){ target.traits.splice(idx,1); }
+      else{
+        const count=target.traits.filter(x=>TRAIT_CAT_OF[x]===cat).length;
+        if(count>=CAT_MAX) return;
+        target.traits.push(t);
+      }
+      holder.innerHTML=traitPickerInner(target.traits);
+      wireTraitHolder(holder);
+    });
+  });
+}
+ 
+function fx(traits){
+  const out={pitLossMult:0,wetBonus:0,atkMult:0,riskAdj:0,incMult:0,ovBonus:0,lastLapBonus:0,noiseMult:0,defBonus:0,handlingIncMult:0,degMult:0,paceEarly:0,mechMult:0,qualiBonus:0,lap1Bonus:0,neutralIncMult:0,poleLap1Penalty:0,poleHandlingMult:0,backfieldPaceBonus:0,backfieldOvBonus:0,restartPaceBonus:0,restartOvBonus:0,restartHandlingMult:0,restartIncMult:0};
+  traits.forEach(t=>{ const e=TRAIT_FX[t.toLowerCase()]; if(e) Object.entries(e).forEach(([k,v])=>out[k]+=v); });
+  return out;
+}
+function allDrivers(){
+  const list=[];
+  roster.forEach(t=>t.drivers.forEach(d=>list.push({...d, team:t, e:fx(d.traits)})));
+  return list;
+}
+function gauss(){ let u=0,v=0; while(u===0)u=Math.random(); while(v===0)v=Math.random(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+function fmtTime(sec){ const m=Math.floor(sec/60), s=(sec-m*60).toFixed(3); return `${m}:${s.padStart(6,"0")}`; }
+function fmtGap(sec){ return sec<=0.0001 ? "—" : "+"+sec.toFixed(3)+"s"; }
+function tier(p){ return p<0.3?"Low":(p<0.5?"Medium":"High"); }
+ 
+function renderRaceHead(){
+  const c=CIRCUITS[raceIdx];
+  document.getElementById("gpName").textContent=c.gp;
+  document.getElementById("circuitName").textContent=c.circuit;
+  document.getElementById("lapsInfo").textContent=c.laps+" laps";
+  document.getElementById("scInfo").textContent="SC: "+tier(c.sc);
+  document.getElementById("vscInfo").textContent="VSC: "+tier(c.vsc);
+  document.getElementById("rfInfo").textContent="Red flag: "+tier(c.rf*3);
+  document.getElementById("circuitSelect").value=raceIdx;
+}
+function populateSelect(){
+  const sel=document.getElementById("circuitSelect");
+  sel.innerHTML=CIRCUITS.map((c,i)=>`<option value="${i}">${c.gp}</option>`).join("");
+}
+document.getElementById("prevRace").addEventListener("click",()=>{ raceIdx=(raceIdx-1+CIRCUITS.length)%CIRCUITS.length; renderRaceHead(); });
+document.getElementById("nextRace").addEventListener("click",()=>{ raceIdx=(raceIdx+1)%CIRCUITS.length; renderRaceHead(); });
+document.getElementById("circuitSelect").addEventListener("change",e=>{ raceIdx=+e.target.value; renderRaceHead(); });
+ 
+let qualiResult=[], weekend={}, lastRace=null;
+ 
+document.getElementById("runQuali").addEventListener("click",()=>{
+  const weather=document.getElementById("weather").value;
+  const baseLap=90;
+  const drivers=allDrivers();
+  const results=drivers.map(d=>{
+    const wetWeight= weather==="wet"?0.5:(weather==="mixed"?0.25:0);
+    let combined = d.team.speed*0.45 + d.pace*0.55 + d.e.qualiBonus;
+    combined += d.e.wetBonus*wetWeight;
+    const eff = combined + d.nudge;
+    const noise = gauss()*(100-d.consistency)/100*0.9*(1+d.e.noiseMult);
+    const lapTime = baseLap-(eff/100)*4.5+noise;
+    return {...d, lapTime};
+  }).sort((a,b)=>a.lapTime-b.lapTime);
+  qualiResult=results; weekend={weather,baseLap};
+  const pole=results[0].lapTime;
+  document.getElementById("qualiTable").innerHTML="<tr><th>Pos</th><th>Driver</th><th>Team</th><th>Time</th><th>Gap</th></tr>"+
+    results.map((d,i)=>`<tr><td class="pos">${i+1}</td><td>${d.name}</td><td>${d.team.name}</td><td>${fmtTime(d.lapTime)}</td><td>${i===0?"—":fmtGap(d.lapTime-pole)}</td></tr>`).join("");
+  document.getElementById("qualiPanel").style.display="block";
+  document.getElementById("runRace").disabled=false;
+});
+ 
+document.getElementById("runRace").addEventListener("click",()=>{
+  const c=CIRCUITS[raceIdx];
+  const laps=c.laps;
+  const weather=document.getElementById("weather").value;
+  const raceName=c.gp;
+  const log=[`${c.gp} — ${c.circuit}, ${laps} laps.`,`Lap 1: Lights out and away we go!`];
+  const field=qualiResult.map((d,i)=>({...d,gridPos:i+1,total:0,lapsSincePit:0,
+    pitLap:15+Math.floor(Math.random()*Math.max(10,laps-25)),pitted:false,dnf:false,dnfLap:null}));
+  let scActive=false, scLapsLeft=0, vscActive=false, vscLapsLeft=0, rfUsed=false, restartNext=false;
+ 
+  for(let lap=1; lap<=laps; lap++){
+    const isRestartLap=restartNext; restartNext=false;
+    const neutralized = scActive||vscActive;
+    if(!neutralized && !rfUsed && Math.random()<c.rf/laps*2){
+      rfUsed=true; scActive=true; scLapsLeft=3;
+      log.push(`Lap ${lap}: RED FLAG — session stopped, field bunches for a standing restart.`);
+    } else if(!neutralized && Math.random()<c.sc/laps){
+      scActive=true; scLapsLeft=2+Math.floor(Math.random()*2);
+      log.push(`Lap ${lap}: Safety car deployed.`);
+    } else if(!neutralized && Math.random()<c.vsc/laps){
+      vscActive=true; vscLapsLeft=1+Math.floor(Math.random()*2);
+      log.push(`Lap ${lap}: Virtual safety car.`);
+    }
+    const wetWeight=weather==="wet"?0.5:(weather==="mixed"?0.2:0);
+    field.forEach(d=>{
+      if(d.dnf) return;
+      d.lapsSincePit++;
+      let combined=d.team.speed*0.45+d.pace*0.55+d.e.wetBonus*wetWeight;
+      if(lap<=3) combined+=d.e.paceEarly;
+      if(lap>=laps-1) combined+=d.e.lastLapBonus;
+      if(lap===1) combined+=d.e.lap1Bonus;
+      if(lap===1 && d.gridPos===1) combined-=d.e.poleLap1Penalty;
+      if(d.gridPos>=11) combined+=d.e.backfieldPaceBonus;
+      if(isRestartLap) combined+=d.e.restartPaceBonus;
+      const eff=combined+d.nudge;
+      const degRate=0.045*(1+d.e.degMult);
+      let lapT=weekend.baseLap-(eff/100)*4.5+d.lapsSincePit*degRate+gauss()*(100-d.consistency)/100*0.9*(1+d.e.noiseMult);
+      if(scActive) lapT=weekend.baseLap*1.35;
+      else if(vscActive) lapT=weekend.baseLap*1.15+gauss()*0.3;
+      if(!d.pitted && lap===d.pitLap){
+        const pitLoss=(24-(d.team.pitcrew/100)*8+Math.random()*3)*(1+d.e.pitLossMult);
+        lapT+=pitLoss; d.pitted=true; d.lapsSincePit=0;
+        log.push(`Lap ${lap}: ${d.name} pits.`);
+      }
+      const neutralMult=neutralized?(1+d.e.neutralIncMult):1;
+      const poleHandlingAdd=(lap===1 && d.gridPos===1)?d.e.poleHandlingMult:0;
+      const restartHandlingAdd=isRestartLap?d.e.restartHandlingMult:0;
+      const mechRisk=(100-d.team.reliability)/100/laps*0.5*(1+d.e.mechMult);
+      const handlingRisk=(100-d.team.handling)/100*(d.risk/100)*(1+wetWeight*1.4)*(lap===1?2:1)/laps*0.3*(1+d.e.handlingIncMult+poleHandlingAdd+restartHandlingAdd)*neutralMult;
+      if(Math.random()<mechRisk){ d.dnf=true; d.dnfLap=lap; log.push(`Lap ${lap}: ${d.name} retires — mechanical failure.`); return; }
+      if(Math.random()<handlingRisk){ d.dnf=true; d.dnfLap=lap; log.push(`Lap ${lap}: ${d.name} retires — spins off.`); return; }
+      d.total+=lapT;
+    });
+    if(!scActive && !vscActive){
+      const running=field.filter(d=>!d.dnf).sort((a,b)=>a.total-b.total);
+      for(let i=running.length-1;i>0;i--){
+        const atk=running[i], def=running[i-1];
+        const gap=atk.total-def.total;
+        if(gap>0 && gap<0.8){
+          const attemptChance=0.3+atk.risk/250+atk.e.atkMult;
+          if(Math.random()<attemptChance){
+            let succ=0.5+(atk.overtaking-def.defense)/220+atk.e.ovBonus/100-def.e.defBonus/100+(atk.team.speed-def.team.speed)/400;
+            if(atk.gridPos>=11) succ+=atk.e.backfieldOvBonus/100;
+            if(isRestartLap) succ+=atk.e.restartOvBonus/100;
+            let incChance=0.1*(1+(atk.e.incMult+def.e.incMult)/2)*(1+wetWeight);
+            if(isRestartLap) incChance*=(1+(atk.e.restartIncMult+def.e.restartIncMult)/2);
+            if(Math.random()<incChance){
+              const hitAtk=Math.random()<0.6;
+              if(hitAtk){ atk.total+=4+Math.random()*4; log.push(`Lap ${lap}: contact — ${atk.name} damaged fighting ${def.name}, loses time.`); }
+              else { def.total+=4+Math.random()*4; log.push(`Lap ${lap}: contact — ${def.name} forced wide defending from ${atk.name}.`); }
+            } else if(Math.random()<succ){
+              atk.total=def.total-0.15; log.push(`Lap ${lap}: ${atk.name} passes ${def.name}.`);
+            }
+          }
+        }
+      }
+    }
+    if(scActive){ scLapsLeft--; if(scLapsLeft<=0){ scActive=false; restartNext=true; log.push(`Lap ${lap}: Safety car in this lap.`); } }
+    if(vscActive){ vscLapsLeft--; if(vscLapsLeft<=0){ vscActive=false; restartNext=true; log.push(`Lap ${lap}: VSC ends.`); } }
+  }
+  const finishers=field.filter(d=>!d.dnf).sort((a,b)=>a.total-b.total);
+  const retired=field.filter(d=>d.dnf).sort((a,b)=>b.dnfLap-a.dnfLap);
+  const winnerTime=finishers.length?finishers[0].total:0;
+  if(finishers.length) log.push(`Chequered flag! ${finishers[0].name} wins the race.`);
+  else log.push(`Chequered flag! No finishers — a race to forget.`);
+ 
+  document.getElementById("raceTitle").textContent=`${raceName} — Race Result`;
+  let rows=finishers.map((d,i)=>`<tr><td class="pos">${i+1}</td><td>${d.name}</td><td>${d.team.name}</td><td>P${d.gridPos}</td><td>${i===0?fmtTime(d.total):fmtGap(d.total-winnerTime)}</td><td>${[d.traits.join(", "),d.note].filter(Boolean).join(" — ")}</td></tr>`).join("");
+  rows+=retired.map(d=>`<tr class="dnf"><td class="pos">DNF</td><td>${d.name}</td><td>${d.team.name}</td><td>P${d.gridPos}</td><td>Retired L${d.dnfLap}</td><td>${[d.traits.join(", "),d.note].filter(Boolean).join(" — ")}</td></tr>`).join("");
+  document.getElementById("raceTable").innerHTML="<tr><th>Pos</th><th>Driver</th><th>Team</th><th>Grid</th><th>Time/Gap</th><th>Traits / Note</th></tr>"+rows;
+  document.getElementById("raceLog").innerHTML=log.map(l=>`<div>${l}</div>`).join("");
+  document.getElementById("racePanel").style.display="block";
+
+  lastRace={raceName,circuit:c.circuit,laps,weather,qualiResult,finishers,retired,log};
+});
+
+function mdEscape(s){ return String(s??"").replace(/\|/g,"\\|"); }
+function buildResultsMarkdown(){
+  const lines=[];
+  const r=lastRace;
+  const title=r?r.raceName:"Race Weekend";
+  lines.push(`# ${title}`);
+  if(r) lines.push(`*${r.circuit} — ${r.laps} laps — ${r.weather} conditions*`);
+  lines.push("");
+  if(qualiResult.length){
+    lines.push("## Qualifying Result");
+    lines.push("");
+    lines.push("| Pos | Driver | Team | Time | Gap |");
+    lines.push("|---|---|---|---|---|");
+    const pole=qualiResult[0].lapTime;
+    qualiResult.forEach((d,i)=>{
+      lines.push(`| ${i+1} | ${mdEscape(d.name)} | ${mdEscape(d.team.name)} | ${fmtTime(d.lapTime)} | ${i===0?"—":fmtGap(d.lapTime-pole)} |`);
+    });
+    lines.push("");
+  }
+  if(r && (r.finishers.length||r.retired.length)){
+    lines.push(`## ${mdEscape(r.raceName)} — Race Result`);
+    lines.push("");
+    lines.push("| Pos | Driver | Team | Grid | Time/Gap | Traits / Note |");
+    lines.push("|---|---|---|---|---|---|");
+    const winnerTime=r.finishers.length?r.finishers[0].total:0;
+    r.finishers.forEach((d,i)=>{
+      const note=[d.traits.join(", "),d.note].filter(Boolean).join(" — ");
+      lines.push(`| ${i+1} | ${mdEscape(d.name)} | ${mdEscape(d.team.name)} | P${d.gridPos} | ${i===0?fmtTime(d.total):fmtGap(d.total-winnerTime)} | ${mdEscape(note)} |`);
+    });
+    r.retired.forEach(d=>{
+      const note=[d.traits.join(", "),d.note].filter(Boolean).join(" — ");
+      lines.push(`| DNF | ${mdEscape(d.name)} | ${mdEscape(d.team.name)} | P${d.gridPos} | Retired L${d.dnfLap} | ${mdEscape(note)} |`);
+    });
+    lines.push("");
+    lines.push("## Race Log");
+    lines.push("");
+    r.log.forEach(l=>lines.push(`- ${l}`));
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+document.getElementById("exportMd").addEventListener("click",()=>{
+  if(!qualiResult.length){ alert("Run qualifying (and ideally the race) first."); return; }
+  const md=buildResultsMarkdown();
+  const blob=new Blob([md],{type:"text/markdown"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const safeName=(lastRace?lastRace.raceName:"race_results").replace(/[^a-z0-9]+/gi,"_").toLowerCase();
+  a.href=url; a.download=`${safeName||"race_results"}.md`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+ 
+document.getElementById("saveRoster").addEventListener("click",()=>{ saveRoster(); alert("Roster saved."); });
+document.getElementById("resetRoster").addEventListener("click",()=>{
+  if(confirm("Reset roster to Trailblazers defaults? This clears your edits.")){ localStorage.removeItem("tb_roster3"); loadRoster(); renderRoster(); }
+});
+ 
+populateSelect(); renderRaceHead();
+loadRoster(); renderRoster();
+</script>
+</body>
+</html>
